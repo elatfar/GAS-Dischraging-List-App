@@ -1,6 +1,9 @@
 const N8N_DISCHARGING_UPLOAD_URL =
   "https://n8n.srv1798914.hstgr.cloud/webhook/discharging-list";
 
+const N8N_PDF_CONTAINER_EXTRACTION_URL =
+  "https://n8n.srv1798914.hstgr.cloud/webhook-test/extract-container-from-pdf";
+
 
 /**
  * Mengirim payload Discharging List ke n8n.
@@ -10,6 +13,19 @@ const N8N_DISCHARGING_UPLOAD_URL =
  */
 function sendDischargingToN8N_(payload) {
 
+  const isPdfFile =
+    String(payload && payload.mimeType || "")
+      .toLowerCase()
+      .includes("pdf") ||
+    String(payload && payload.fileName || "")
+      .toLowerCase()
+      .endsWith(".pdf");
+
+  const targetUrl =
+    isPdfFile
+      ? N8N_PDF_CONTAINER_EXTRACTION_URL
+      : N8N_DISCHARGING_UPLOAD_URL;
+
   const options = {
     method: "post",
     contentType: "application/json",
@@ -18,8 +34,14 @@ function sendDischargingToN8N_(payload) {
   };
 
 
+  console.log(
+    "DISCHARGING N8N TARGET URL: " +
+    targetUrl
+  );
+
+
   const response = UrlFetchApp.fetch(
-    N8N_DISCHARGING_UPLOAD_URL,
+    targetUrl,
     options
   );
 

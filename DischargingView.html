@@ -225,7 +225,7 @@
                         text-slate-500
                       "
                     >
-                      Gunakan file Excel Discharging List.
+                      Gunakan file Excel atau PDF Discharging List.
                     </p>
 
                   </div>
@@ -247,7 +247,7 @@
                       text-teal-700
                     "
                   >
-                    .xlsx / .xls
+                    .xlsx / .xls / .pdf
                   </span>
 
                 </div>
@@ -314,7 +314,7 @@
                       text-slate-900
                     "
                   >
-                    Pilih file Excel
+                    Pilih file Excel/PDF
                   </span>
 
 
@@ -343,7 +343,7 @@
                   <input
                     id="dischargingFile"
                     type="file"
-                    accept=".xlsx,.xls"
+                    accept=".xlsx,.xls,.pdf"
                     class="hidden"
                     onchange="handleDischargingFileSelected(event)"
                   >
@@ -641,10 +641,10 @@
         .toLowerCase();
 
 
-    if (!["xlsx", "xls"].includes(extension)) {
+    if (!["xlsx", "xls", "pdf"].includes(extension)) {
 
       showToast(
-        "File harus Excel (.xlsx atau .xls).",
+        "File harus Excel (.xlsx atau .xls) atau PDF (.pdf).",
         "error"
       );
 
@@ -914,6 +914,12 @@
       // PAYLOAD
       // ========================================================
 
+      const extension =
+        String(file.name || "")
+          .split(".")
+          .pop()
+          .toLowerCase();
+
       const payload = {
 
         fileName:
@@ -921,7 +927,11 @@
 
         mimeType:
           file.type ||
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          (
+            extension === "pdf"
+              ? "application/pdf"
+              : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          ),
 
         base64:
           base64,
