@@ -1,0 +1,2360 @@
+<script>
+  const STORAGE_KEY = "containerDepotPortal.session.v3";
+
+  const state = {
+    config: null,
+    menus: [],
+    session: null,
+    activeRoute: ""
+  };
+
+  // ============================================================
+  // EVENT LISTENERS
+  // ============================================================
+
+  document.addEventListener("DOMContentLoaded", boot);
+
+  
+  // ============================================================
+  // DASHBOARD BROWSER BACK GUARD
+  // Setelah login, browser Back tidak boleh keluar dari Web App.
+  // Menu internal tetap bisa Back ke Dashboard.
+  // ============================================================
+  let dashboardBackGuardReady = false;
+
+  function installDashboardBackGuard_() {
+    if (dashboardBackGuardReady) return;
+
+    try {
+      history.replaceState(
+        { route: "home", dashboardRoot: true },
+        "",
+        window.location.href
+      );
+
+      history.pushState(
+        { route: "home", dashboardGuard: true },
+        "",
+        window.location.href
+      );
+
+      dashboardBackGuardReady = true;
+    } catch (error) {
+      console.warn("Dashboard history guard gagal dipasang:", error);
+    }
+  }
+
+  function resetDashboardBackGuard_() {
+    dashboardBackGuardReady = false;
+  }
+
+window.addEventListener("popstate", function(event) {
+    if (!state.session) {
+      renderLogin();
+      return;
+    }
+
+    const route =
+      event.state && typeof event.state.route === "string"
+        ? event.state.route
+        : getRouteFromUrl();
+
+    renderRoute(route, false);
+  });
+
+  document.addEventListener("submit", function(event) {
+    if (event.target && event.target.id === "loginForm") {
+      handleLogin(event);
+      return;
+    }
+
+    if (event.target && event.target.id === "bookingGateInForm") {
+      handleBookingGateIn(event);
+      return;
+    }
+  });
+
+  document.addEventListener("click", function(event) {
+    const actionTarget = event.target.closest("[data-action]");
+
+    if (actionTarget) {
+      const action = actionTarget.dataset.action;
+
+      if (action === "logout") {
+        handleLogout();
+        return;
+      }
+
+      if (action === "back-dashboard") {
+        navigateTo("");
+        return;
+      }
+
+      if (action === "add-container-row") {
+        addContainerRow();
+        return;
+      }
+
+      if (action === "remove-container-row") {
+        removeContainerRow(actionTarget);
+        return;
+      }
+    }
+
+    const routeTarget = event.target.closest("[data-route]");
+
+    if (!routeTarget) {
+      return;
+    }
+
+    const route = routeTarget.dataset.route || "";
+    navigateTo(route);
+  });
+
+
+  // ============================================================
+  // CLIENT ROUTER / BROWSER HISTORY
+  // ============================================================
+
+  function navigateTo(route, replaceHistory) {
+    const normalizedRoute = String(route || "").trim();
+
+    const url = buildRouteUrl(normalizedRoute);
+
+    const historyState = {
+      route: normalizedRoute
+    };
+
+    if (replaceHistory) {
+      window.history.replaceState(
+        historyState,
+        "",
+        url
+      );
+    } else {
+      window.history.pushState(
+        historyState,
+        "",
+        url
+      );
+    }
+
+    renderRoute(normalizedRoute, false);
+  }
+
+
+  function renderRoute(route) {
+    const normalizedRoute = String(route || "").trim();
+
+    state.activeRoute = normalizedRoute;
+
+    if (!normalizedRoute) {
+      renderHome();
+      return;
+    }
+
+
+    if (normalizedRoute === "booking-gate-in") {
+      renderBookingGateIn();
+      return;
+    }
+
+
+    if (normalizedRoute === "discharging-list") {
+
+      console.log(
+        "OPEN DISCHARGING:",
+        typeof renderDischarging
+      );
+
+
+      if (
+        typeof renderDischarging === "function"
+      ) {
+
+        renderDischarging();
+
+      } else {
+
+        console.error(
+          "renderDischarging() tidak tersedia. " +
+          "Pastikan DischargingView di-include di Index.html."
+        );
+
+
+        showToast(
+          "Module Discharging gagal dimuat.",
+          "error"
+        );
+
+
+        renderComingSoon(normalizedRoute);
+      }
+
+      return;
+    }
+
+
+    renderComingSoon(normalizedRoute);
+  }
+
+
+  function buildRouteUrl(route) {
+    const url = new URL(window.location.href);
+
+    if (route) {
+      url.searchParams.set("route", route);
+    } else {
+      url.searchParams.delete("route");
+    }
+
+    return (
+      url.pathname +
+      url.search +
+      url.hash
+    );
+  }
+
+
+  function getRouteFromUrl() {
+    try {
+      const url = new URL(window.location.href);
+
+      return String(
+        url.searchParams.get("route") || ""
+      ).trim();
+
+    } catch (error) {
+      console.warn(
+        "Gagal membaca route dari URL:",
+        error
+      );
+
+      return "";
+    }
+  }
+
+
+  // ============================================================
+  // BOOTSTRAP
+  // ============================================================
+
+  async function boot() {
+    renderLoading();
+
+    try {
+      const response = await runServer("appBootstrap");
+
+      if (!isSuccessResponse(response)) {
+        throw new Error(
+          response && response.message
+            ? response.message
+            : "Bootstrap gagal."
+        );
+      }
+
+      const data = response.data || {};
+
+      state.config = data.config || {};
+      state.menus = Array.isArray(data.menus) ? data.menus : [];
+      state.session = getStoredSession();
+
+      console.log("APP BOOTSTRAP:", data);
+      console.log("MENUS:", state.menus);
+
+      if (state.session) {
+        const initialRoute = getRouteFromUrl();
+
+        window.history.replaceState(
+          { route: initialRoute },
+          "",
+          buildRouteUrl(initialRoute)
+        );
+
+        renderRoute(initialRoute);
+
+      } else {
+        window.history.replaceState(
+          { route: "" },
+          "",
+          buildRouteUrl("")
+        );
+
+        renderLogin();
+      }
+
+    } catch (error) {
+      console.error("BOOT ERROR:", error);
+      renderFatalError(error.message || "Aplikasi gagal dimuat.");
+    }
+  }
+
+
+  // ============================================================
+  // SERVER
+  // ============================================================
+
+  function runServer(functionName, ...args) {
+    return new Promise(function(resolve, reject) {
+      const runner = google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(function(error) {
+          reject(
+            new Error(
+              error && error.message
+                ? error.message
+                : String(error)
+            )
+          );
+        });
+
+      runner[functionName](...args);
+    });
+  }
+
+
+  // ============================================================
+  // LOGIN
+  // ============================================================
+
+  async function handleLogin(event) {
+    event.preventDefault();
+
+    const form = event.target;
+
+    const email = String(form.email.value || "")
+      .trim()
+      .toLowerCase();
+
+    const password = String(form.password.value || "");
+    const remember = Boolean(form.remember.checked);
+
+    if (!email || !password) {
+      showToast("Email dan password wajib diisi.", "error");
+      return;
+    }
+
+    setLoginLoading(true);
+
+    try {
+      const response = await runServer(
+        "loginOdoo",
+        email,
+        password,
+        navigator.userAgent || ""
+      );
+
+      if (!isSuccessResponse(response)) {
+        throw new Error(
+          response && response.message
+            ? response.message
+            : "Login gagal."
+        );
+      }
+
+      const data = response.data || {};
+
+      if (!data.uid) {
+        throw new Error(
+          "Login gagal. ID user Odoo tidak ditemukan."
+        );
+      }
+
+      saveSession({
+        uid: String(data.uid),
+        id: String(data.id || data.uid),
+        email: email,
+        partnerId: String(data.partnerId || ""),
+        partnerName: String(data.partnerName || ""),
+        partner_id: Array.isArray(data.partner_id)
+          ? data.partner_id
+          : [],
+        passwordEncoded: encodeText(password),
+        loginAt: new Date().toISOString()
+      }, remember);
+
+      state.session = getStoredSession();
+      state.activeRoute = "";
+
+      window.history.replaceState(
+        { route: "" },
+        "",
+        buildRouteUrl("")
+      );
+
+      showToast(
+        "Login berhasil. Selamat datang.",
+        "success"
+      );
+
+      renderHome();
+
+    } catch (error) {
+      console.error("LOGIN ERROR:", error);
+
+      showToast(
+        error.message || "Login gagal.",
+        "error"
+      );
+
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
+
+  function handleLogout() {
+    resetDashboardBackGuard_();
+
+    clearSession();
+
+    state.session = null;
+    state.activeRoute = "";
+
+    window.history.replaceState(
+      { route: "" },
+      "",
+      buildRouteUrl("")
+    );
+
+    renderLogin();
+
+    showToast(
+      "Anda sudah logout.",
+      "success"
+    );
+  }
+
+
+  // ============================================================
+  // LOADING
+  // ============================================================
+
+  function renderLoading() {
+    setAppHtml(`
+      <main class="port-bg min-h-screen flex items-center justify-center p-6">
+
+        <section class="dark-glass rounded-3xl p-8 text-white shadow-soft soft-appear">
+
+          <div class="flex items-center gap-4">
+
+            <div class="loader"></div>
+
+            <div>
+              <p class="text-sm text-cyan-100">
+                Memuat aplikasi
+              </p>
+
+              <h1 class="text-xl font-bold">
+                Container Depot Portal
+              </h1>
+            </div>
+
+          </div>
+
+        </section>
+
+      </main>
+    `);
+  }
+
+
+  // ============================================================
+  // LOGIN PAGE
+  // ============================================================
+
+  function renderLogin() {
+    const config = state.config || {};
+    const logoUrl = escapeHtml(config.logoUrl || "");
+
+    setAppHtml(`
+      <main class="port-bg min-h-screen grid lg:grid-cols-2">
+
+        <!-- LEFT PANEL -->
+
+        <section class="hidden lg:flex flex-col justify-between p-10 text-white">
+
+          <div class="flex items-center gap-4">
+
+            <div class="h-14 w-14 rounded-2xl bg-white/90 p-2 shadow-soft flex items-center justify-center">
+              <img
+                src="${logoUrl}"
+                class="max-h-full max-w-full object-contain"
+                onerror="this.style.display='none'"
+              >
+            </div>
+
+            <div>
+              <p class="text-sm text-cyan-100">
+                Modern Port Terminal
+              </p>
+
+              <h1 class="text-2xl font-extrabold tracking-tight">
+                Container Depot Portal
+              </h1>
+            </div>
+
+          </div>
+
+
+          <div class="max-w-xl soft-appear">
+
+            <div class="mb-6 inline-flex items-center gap-2 rounded-full border border-cyan-300/25 bg-cyan-300/10 px-4 py-2 text-sm text-cyan-50">
+
+              <i
+                data-lucide="network"
+                class="h-4 w-4"
+              ></i>
+
+              Terintegrasi n8n dan Odoo ERP
+
+            </div>
+
+            <h2 class="text-5xl font-extrabold leading-tight tracking-tight">
+              Satu portal untuk operasional container depot.
+            </h2>
+
+            <p class="mt-5 text-lg leading-8 text-slate-200">
+              Login menggunakan kredensial Odoo ERP.
+              Setelah berhasil, user dapat mengakses
+              operasional CFS, booking container,
+              dan dokumen.
+            </p>
+
+          </div>
+
+
+          <div class="grid grid-cols-3 gap-3 text-sm text-slate-200">
+
+            <div class="rounded-2xl border border-white/10 bg-white/10 p-4">
+              <p class="font-semibold text-white">
+                Shipping Agent
+              </p>
+
+              <p class="mt-1 text-xs">
+                Discharging List
+              </p>
+            </div>
+
+
+            <div class="rounded-2xl border border-white/10 bg-white/10 p-4">
+              <p class="font-semibold text-white">
+                Booking
+              </p>
+
+              <p class="mt-1 text-xs">
+                Booking Gate-In dan Gate-Out
+              </p>
+            </div>
+
+
+            
+
+          </div>
+
+        </section>
+
+
+        <!-- LOGIN FORM -->
+
+        <section class="flex items-center justify-center p-5 sm:p-8">
+
+          <div class="glass-panel w-full max-w-md rounded-[2rem] p-6 shadow-soft sm:p-8 soft-appear">
+
+            <div class="mb-8 flex items-center gap-4">
+
+              <div class="h-16 w-16 rounded-2xl bg-white p-2 shadow-lg flex items-center justify-center">
+
+                <img
+                  src="${logoUrl}"
+                  class="max-h-full max-w-full object-contain"
+                  onerror="this.style.display='none'"
+                >
+
+              </div>
+
+              <div>
+                <p class="text-sm font-medium text-teal-700">
+                  Login Portal
+                </p>
+
+                <h2 class="text-2xl font-extrabold text-slate-950">
+                  Container Depot
+                </h2>
+              </div>
+
+            </div>
+
+
+            <form
+              id="loginForm"
+              class="space-y-5"
+            >
+
+              <div>
+
+                <label
+                  for="email"
+                  class="mb-2 block text-sm font-semibold text-slate-700"
+                >
+                  Email Odoo ERP
+                </label>
+
+                <div class="relative">
+
+                  <i
+                    data-lucide="mail"
+                    class="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
+                  ></i>
+
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    autocomplete="email"
+                    class="w-full rounded-2xl border border-slate-200 bg-white px-12 py-4 text-sm outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10"
+                    placeholder="nama@perusahaan.com"
+                    required
+                  >
+
+                </div>
+
+              </div>
+
+
+              <div>
+
+                <label
+                  for="password"
+                  class="mb-2 block text-sm font-semibold text-slate-700"
+                >
+                  Password Odoo ERP
+                </label>
+
+                <div class="relative">
+
+                  <i
+                    data-lucide="lock-keyhole"
+                    class="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
+                  ></i>
+
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    autocomplete="current-password"
+                    class="w-full rounded-2xl border border-slate-200 bg-white px-12 py-4 text-sm outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10"
+                    placeholder="Masukkan password"
+                    required
+                  >
+
+                </div>
+
+              </div>
+
+
+              <label class="flex items-center gap-3 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+
+                <input
+                  name="remember"
+                  type="checkbox"
+                  class="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                >
+
+                <span>
+                  Simpan session di perangkat ini
+                </span>
+
+              </label>
+
+
+              <button
+                id="loginButton"
+                type="submit"
+                class="group flex w-full items-center justify-center gap-3 rounded-2xl bg-teal-600 px-5 py-4 text-sm font-bold text-white shadow-lg shadow-teal-600/25 transition hover:bg-teal-700 focus:outline-none focus:ring-4 focus:ring-teal-500/20 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+
+                <span id="loginButtonText">
+                  Masuk ke Portal
+                </span>
+
+                <i
+                  id="loginButtonIcon"
+                  data-lucide="arrow-right"
+                  class="h-5 w-5 transition group-hover:translate-x-1"
+                ></i>
+
+              </button>
+
+            </form>
+
+
+            <p class="mt-6 text-center text-xs leading-6 text-slate-500">
+              Autentikasi dikirim ke n8n, lalu n8n
+              meneruskan validasi ke Odoo ERP.
+            </p>
+
+          </div>
+
+        </section>
+
+      </main>
+    `);
+
+    refreshIcons();
+  }
+
+
+  // ============================================================
+  // DASHBOARD
+  // ============================================================
+
+  function renderHome() {
+    installDashboardBackGuard_();
+
+    const config = state.config || {};
+    const session = state.session || {};
+    const menus = Array.isArray(state.menus)
+      ? state.menus
+      : [];
+
+    console.log("=== RENDER HOME ===");
+    console.log("STATE MENUS:", menus);
+
+    console.table(
+      menus.map(function(menu) {
+        return {
+          title: menu.Title,
+          route: menu.Route,
+          active: menu.IsActive,
+          sort: menu.SortOrder
+        };
+      })
+    );
+
+
+    // ----------------------------------------------------------
+    // FIND MENU
+    // ----------------------------------------------------------
+
+    function findMenu(route) {
+      return menus.find(function(menu) {
+        return String(menu.Route || "").trim() === route;
+      });
+    }
+
+
+    // ----------------------------------------------------------
+    // MENU CARD
+    // ----------------------------------------------------------
+
+    function buildMenuCard(menu) {
+      if (!menu) {
+        return "";
+      }
+
+      const title = escapeHtml(menu.Title || "-");
+      const description = escapeHtml(menu.Description || "");
+      const icon = escapeHtml(menu.Icon || "box");
+      const route = escapeHtml(menu.Route || "");
+
+      return `
+        <button
+          type="button"
+          data-route="${route}"
+          class="menu-card rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-1 hover:border-teal-200 hover:shadow-md"
+        >
+
+          <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-50 text-teal-700">
+
+            <i
+              data-lucide="${icon}"
+              class="h-7 w-7"
+            ></i>
+
+          </div>
+
+
+          <h3 class="text-lg font-extrabold text-slate-950">
+            ${title}
+          </h3>
+
+
+          <p class="mt-2 min-h-[3rem] text-sm leading-6 text-slate-500">
+            ${description}
+          </p>
+
+
+          <div class="mt-5 flex items-center gap-2 text-sm font-bold text-teal-700">
+
+            Buka menu
+
+            <i
+              data-lucide="arrow-right"
+              class="h-4 w-4"
+            ></i>
+
+          </div>
+
+        </button>
+      `;
+    }
+
+
+    // ----------------------------------------------------------
+    // GROUPING
+    // ----------------------------------------------------------
+
+    // SHIPPING AGENT
+    const shippingAgentMenus = [
+      findMenu("discharging-list")
+    ].filter(Boolean);
+
+
+    // BOOKING CONTAINER
+    const bookingMenus = [
+      findMenu("booking-gate-in"),
+      findMenu("booking-gate-out")
+    ].filter(Boolean);
+
+
+    // ----------------------------------------------------------
+    // HIDDEN MENUS
+    // ----------------------------------------------------------
+    // Sementara tidak ditampilkan di dashboard:
+    //
+    // - Stuffing Order
+    // - Stripping Order
+    // - Ambil Faktur Pajak
+    //
+    // Data menu tetap ada di Sheet Menus.
+    // Hanya disembunyikan dari dashboard.
+    // ----------------------------------------------------------
+
+    const hiddenRoutes = [
+      "stuffing-order",
+      "stripping-order",
+      "ambil-faktur-pajak"
+    ];
+
+
+    // ----------------------------------------------------------
+    // OTHER MENUS
+    // ----------------------------------------------------------
+    // Kalau ada menu dari Sheet Menus yang belum masuk grouping,
+    // tetap ditampilkan agar tidak "hilang".
+
+    const knownRoutes = [
+      "discharging-list",
+      "booking-gate-in",
+      "booking-gate-out",
+      "stuffing-order",
+      "stripping-order",
+      "ambil-faktur-pajak"
+    ];
+
+    const otherMenus = menus.filter(function(menu) {
+      const route = String(menu.Route || "").trim();
+
+      return (
+        route &&
+        knownRoutes.indexOf(route) === -1 &&
+        hiddenRoutes.indexOf(route) === -1
+      );
+    });
+
+
+    // ----------------------------------------------------------
+    // GROUP HTML
+    // ----------------------------------------------------------
+
+    function buildMenuGroup(
+      title,
+      description,
+      icon,
+      groupMenus
+    ) {
+      if (!groupMenus.length) {
+        return "";
+      }
+
+      return `
+        <section class="mb-10">
+
+          <div class="mb-5 flex items-start gap-3">
+
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+
+              <i
+                data-lucide="${escapeHtml(icon)}"
+                class="h-5 w-5"
+              ></i>
+
+            </div>
+
+
+            <div>
+
+              <h3 class="text-lg font-extrabold text-slate-950">
+                ${escapeHtml(title)}
+              </h3>
+
+              <p class="mt-1 text-sm text-slate-500">
+                ${escapeHtml(description)}
+              </p>
+
+            </div>
+
+          </div>
+
+
+          <div class="grid max-w-4xl gap-4 md:grid-cols-2">
+
+            ${groupMenus
+              .map(buildMenuCard)
+              .join("")}
+
+          </div>
+
+        </section>
+      `;
+    }
+
+
+    const menuGroupsHtml = `
+
+    ${buildMenuGroup(
+      "Shipping Agent",
+      "Proses operasional yang dilakukan oleh Shipping Agent.",
+      "ship",
+      shippingAgentMenus
+    )}
+
+    ${buildMenuGroup(
+      "Booking Container",
+      "Kelola booking container masuk dan keluar depot.",
+      "calendar-check",
+      bookingMenus
+    )}
+
+    ${buildMenuGroup(
+      "Menu Lainnya",
+      "Menu operasional lainnya yang tersedia.",
+      "layout-grid",
+      otherMenus
+    )}
+
+  `;
+
+
+    // ----------------------------------------------------------
+    // EMPTY MENU
+    // ----------------------------------------------------------
+
+    const emptyMenuHtml = menus.length === 0
+      ? `
+        <div class="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center">
+
+          <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+            <i
+              data-lucide="layout-grid"
+              class="h-6 w-6"
+            ></i>
+          </div>
+
+          <h3 class="mt-4 font-extrabold text-slate-900">
+            Menu belum tersedia
+          </h3>
+
+          <p class="mt-2 text-sm text-slate-500">
+            Jalankan SetupDatabase atau periksa Sheet Menus.
+          </p>
+
+        </div>
+      `
+      : "";
+
+
+    // ----------------------------------------------------------
+    // RENDER PAGE
+    // ----------------------------------------------------------
+
+    setAppHtml(`
+      <main class="min-h-screen bg-slate-50">
+
+        ${buildAppHeader(config, session)}
+
+
+        <section class="mx-auto max-w-7xl px-5 py-8 sm:px-8 lg:px-10">
+
+
+          <!-- DASHBOARD HEADER -->
+
+          <div class="mb-10 grid gap-4 lg:grid-cols-[1.4fr_0.6fr]">
+
+
+            <div class="rounded-[2rem] bg-white p-6 shadow-sm">
+
+              <p class="text-sm font-semibold uppercase tracking-[0.25em] text-teal-600">
+                Dashboard
+              </p>
+
+
+              <h2 class="mt-2 text-3xl font-extrabold text-slate-950">
+                Selamat datang di portal operasional depot.
+              </h2>
+
+
+              <p class="mt-3 max-w-3xl text-sm leading-7 text-slate-500">
+                Pilih salah satu menu di bawah untuk melanjutkan.
+                Session login tersimpan di browser dan akan digunakan
+                untuk proses integrasi tahap berikutnya.
+              </p>
+
+            </div>
+
+
+            <!-- USER INFO -->
+
+            <div class="rounded-[2rem] bg-slate-900 p-6 text-white shadow-sm">
+
+              <div class="flex items-center gap-3">
+
+                <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-400/15 text-teal-300">
+
+                  <i
+                    data-lucide="shield-check"
+                    class="h-6 w-6"
+                  ></i>
+
+                </div>
+
+
+                <div>
+
+                  <p class="text-sm text-slate-300">
+                    Odoo User ID
+                  </p>
+
+                  <p class="text-2xl font-extrabold">
+                    ${escapeHtml(session.uid || "-")}
+                  </p>
+
+                </div>
+
+              </div>
+
+
+              <div class="mt-5 rounded-2xl bg-white/5 p-4">
+
+                <p class="text-xs text-slate-400">
+                  Partner
+                </p>
+
+                <p class="mt-1 text-sm font-bold text-white">
+                  ${escapeHtml(session.partnerName || "-")}
+                </p>
+
+                <p class="mt-1 text-xs text-slate-400">
+                  Partner ID:
+                  ${escapeHtml(session.partnerId || "-")}
+                </p>
+
+              </div>
+
+            </div>
+
+          </div>
+
+
+          <!-- MENU GROUPS -->
+
+          ${menuGroupsHtml}
+
+          ${emptyMenuHtml}
+
+
+        </section>
+
+      </main>
+    `);
+
+    refreshIcons();
+  }
+
+
+  // ============================================================
+  // FATAL ERROR
+  // ============================================================
+
+  function renderFatalError(message) {
+    setAppHtml(`
+      <main class="port-bg min-h-screen flex items-center justify-center p-6">
+
+        <section class="glass-panel max-w-lg rounded-[2rem] p-8 text-center shadow-soft soft-appear">
+
+          <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+
+            <i
+              data-lucide="triangle-alert"
+              class="h-8 w-8"
+            ></i>
+
+          </div>
+
+
+          <h1 class="text-2xl font-extrabold text-slate-950">
+            Aplikasi gagal dimuat
+          </h1>
+
+
+          <p class="mt-3 text-sm leading-6 text-slate-500">
+            ${escapeHtml(message)}
+          </p>
+
+        </section>
+
+      </main>
+    `);
+
+    refreshIcons();
+  }
+
+
+  // ============================================================
+  // LOGIN LOADING
+  // ============================================================
+
+  function setLoginLoading(isLoading) {
+    const button =
+      document.getElementById("loginButton");
+
+    const buttonText =
+      document.getElementById("loginButtonText");
+
+    const buttonIcon =
+      document.getElementById("loginButtonIcon");
+
+    if (!button || !buttonText || !buttonIcon) {
+      return;
+    }
+
+    button.disabled = Boolean(isLoading);
+
+    buttonText.textContent =
+      isLoading
+        ? "Memvalidasi..."
+        : "Masuk ke Portal";
+
+    if (isLoading) {
+      buttonIcon.outerHTML =
+        '<span id="loginButtonIcon" class="loader"></span>';
+    } else {
+      buttonIcon.outerHTML =
+        '<i id="loginButtonIcon" data-lucide="arrow-right" class="h-5 w-5 transition group-hover:translate-x-1"></i>';
+
+      refreshIcons();
+    }
+  }
+
+
+  // ============================================================
+  // SESSION
+  // ============================================================
+
+  function saveSession(session, remember) {
+    const storage =
+      remember
+        ? localStorage
+        : sessionStorage;
+
+    const otherStorage =
+      remember
+        ? sessionStorage
+        : localStorage;
+
+    try {
+      otherStorage.removeItem(STORAGE_KEY);
+
+      storage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(session)
+      );
+
+    } catch (error) {
+      sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(session)
+      );
+    }
+  }
+
+
+  function getStoredSession() {
+    try {
+      const rawSession =
+        sessionStorage.getItem(STORAGE_KEY);
+
+      const rawLocal =
+        localStorage.getItem(STORAGE_KEY);
+
+      const raw =
+        rawSession || rawLocal;
+
+      if (!raw) {
+        return null;
+      }
+
+      const parsed = JSON.parse(raw);
+
+      if (
+        !parsed ||
+        !parsed.email ||
+        !parsed.uid
+      ) {
+        clearSession();
+        return null;
+      }
+
+      return {
+        uid: String(parsed.uid || ""),
+        id: String(
+          parsed.id ||
+          parsed.uid ||
+          ""
+        ),
+        email: String(parsed.email || ""),
+        partnerId: String(parsed.partnerId || ""),
+        partnerName: String(parsed.partnerName || ""),
+        partner_id: Array.isArray(parsed.partner_id)
+          ? parsed.partner_id
+          : [],
+        password: decodeText(
+          parsed.passwordEncoded || ""
+        ),
+        passwordEncoded:
+          parsed.passwordEncoded || "",
+        loginAt:
+          parsed.loginAt || ""
+      };
+
+    } catch (error) {
+      console.error(
+        "SESSION ERROR:",
+        error
+      );
+
+      clearSession();
+      return null;
+    }
+  }
+
+
+  function clearSession() {
+    try {
+      sessionStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STORAGE_KEY);
+
+    } catch (error) {
+      console.warn(
+        "Gagal menghapus session:",
+        error
+      );
+    }
+  }
+
+
+  // ============================================================
+  // RESPONSE
+  // ============================================================
+
+  function isSuccessResponse(response) {
+    return Boolean(
+      response &&
+      response.success === true
+    );
+  }
+
+
+  // ============================================================
+  // APP HEADER
+  // ============================================================
+
+  function buildAppHeader(config, session) {
+    return `
+      <header class="port-bg px-5 py-6 text-white sm:px-8 lg:px-10">
+
+        <div class="mx-auto flex max-w-7xl flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+
+
+          <div class="flex items-center gap-4">
+
+            <div class="h-14 w-14 rounded-2xl bg-white p-2 shadow-lg flex items-center justify-center">
+
+              <img
+                src="${escapeHtml(config.logoUrl || "")}"
+                class="max-h-full max-w-full object-contain"
+                onerror="this.style.display='none'"
+              >
+
+            </div>
+
+
+            <div>
+
+              <p class="text-sm text-cyan-100">
+                ${escapeHtml(
+                  config.theme ||
+                  "Modern Port Terminal"
+                )}
+              </p>
+
+              <h1 class="text-2xl font-extrabold tracking-tight">
+                ${escapeHtml(
+                  config.appName ||
+                  "Container Depot Portal"
+                )}
+              </h1>
+
+            </div>
+
+          </div>
+
+
+          <div class="flex items-center gap-3">
+
+            <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-right">
+
+              <p class="text-xs text-cyan-100">
+                Login sebagai
+              </p>
+
+              <p class="text-sm font-bold">
+                ${escapeHtml(
+                  (session && session.email) ||
+                  "-"
+                )}
+              </p>
+
+            </div>
+
+
+            <button
+              type="button"
+              data-action="logout"
+              class="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-slate-900 shadow-lg transition hover:bg-cyan-50"
+            >
+
+              <i
+                data-lucide="log-out"
+                class="h-4 w-4"
+              ></i>
+
+              Logout
+
+            </button>
+
+          </div>
+
+        </div>
+
+      </header>
+    `;
+  }
+
+
+  // ============================================================
+  // BASIC DOM
+  // ============================================================
+
+  function setAppHtml(html) {
+    const app =
+      document.getElementById("app");
+
+    if (app) {
+      app.innerHTML = html;
+    }
+  }
+
+
+  // ============================================================
+  // TOAST
+  // ============================================================
+
+  function showToast(message, type) {
+    const root =
+      document.getElementById("toastRoot");
+
+    if (!root) {
+      return;
+    }
+
+    const toastId =
+      "toast-" + Date.now();
+
+    const isError =
+      type === "error";
+
+    const html = `
+      <div
+        id="${toastId}"
+        class="soft-appear flex min-w-[280px] max-w-sm items-start gap-3 rounded-2xl border bg-white p-4 shadow-soft ${
+          isError
+            ? "border-red-100"
+            : "border-teal-100"
+        }"
+      >
+
+        <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
+          isError
+            ? "bg-red-50 text-red-600"
+            : "bg-teal-50 text-teal-700"
+        }">
+
+          <i
+            data-lucide="${
+              isError
+                ? "x-circle"
+                : "check-circle-2"
+            }"
+            class="h-5 w-5"
+          ></i>
+
+        </div>
+
+
+        <div>
+
+          <p class="text-sm font-bold text-slate-950">
+            ${isError ? "Gagal" : "Berhasil"}
+          </p>
+
+          <p class="mt-1 text-sm leading-5 text-slate-500">
+            ${escapeHtml(message)}
+          </p>
+
+        </div>
+
+      </div>
+    `;
+
+    root.insertAdjacentHTML(
+      "beforeend",
+      html
+    );
+
+    refreshIcons();
+
+    setTimeout(function() {
+      const toast =
+        document.getElementById(toastId);
+
+      if (toast) {
+        toast.remove();
+      }
+    }, 4200);
+  }
+
+
+  // ============================================================
+  // ICONS
+  // ============================================================
+
+  function refreshIcons() {
+    if (
+      window.lucide &&
+      typeof window.lucide.createIcons === "function"
+    ) {
+      window.lucide.createIcons();
+    }
+  }
+
+
+  // ============================================================
+  // HELPERS
+  // ============================================================
+
+  function escapeHtml(value) {
+    return String(
+      value === undefined ||
+      value === null
+        ? ""
+        : value
+    )
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+
+  function encodeText(value) {
+    try {
+      return btoa(
+        unescape(
+          encodeURIComponent(
+            String(value || "")
+          )
+        )
+      );
+
+    } catch (error) {
+      return String(value || "");
+    }
+  }
+
+
+  function decodeText(value) {
+    try {
+      return decodeURIComponent(
+        escape(
+          atob(
+            String(value || "")
+          )
+        )
+      );
+
+    } catch (error) {
+      return String(value || "");
+    }
+  }
+
+
+  // ============================================================
+  // COMING SOON
+  // ============================================================
+
+  function renderComingSoon(route) {
+    const config = state.config || {};
+    const session = state.session || {};
+
+    const menus =
+      Array.isArray(state.menus)
+        ? state.menus
+        : [];
+
+    const menu =
+      menus.find(function(m) {
+        return String(m.Route || "") === route;
+      }) || {};
+
+
+    setAppHtml(`
+      <main class="min-h-screen bg-slate-50">
+
+        ${buildAppHeader(config, session)}
+
+
+        <section class="mx-auto max-w-7xl px-5 py-10 sm:px-8 lg:px-10">
+
+          <div class="mb-6">
+
+            <button
+              type="button"
+              data-action="back-dashboard"
+              class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition hover:border-teal-300 hover:text-teal-700"
+            >
+
+              <i
+                data-lucide="arrow-left"
+                class="h-4 w-4"
+              ></i>
+
+              Dashboard
+
+            </button>
+
+          </div>
+
+
+          <div class="flex flex-col items-center justify-center rounded-[2rem] border border-dashed border-slate-300 bg-white py-20 text-center shadow-sm soft-appear">
+
+            <div class="flex h-20 w-20 items-center justify-center rounded-3xl bg-teal-50 text-teal-500">
+
+              <i
+                data-lucide="${escapeHtml(menu.Icon || "box")}"
+                class="h-10 w-10"
+              ></i>
+
+            </div>
+
+
+            <h2 class="mt-6 text-2xl font-extrabold text-slate-950">
+              ${escapeHtml(
+                menu.Title ||
+                "Halaman ini"
+              )}
+            </h2>
+
+
+            <p class="mt-3 text-sm text-slate-500">
+              Modul ini sedang dalam pengembangan.
+            </p>
+
+          </div>
+
+        </section>
+
+      </main>
+    `);
+
+    refreshIcons();
+  }
+
+
+  // ============================================================
+  // BOOKING GATE-IN
+  // ============================================================
+
+  function renderBookingGateIn() {
+    const config = state.config || {};
+    const session = state.session || {};
+
+    setAppHtml(`
+      <main class="min-h-screen bg-slate-50">
+
+        ${buildAppHeader(config, session)}
+
+
+        <section class="mx-auto max-w-7xl px-5 py-8 sm:px-8 lg:px-10 soft-appear">
+
+
+          <!-- BREADCRUMB -->
+
+          <div class="mb-6 flex items-center gap-3">
+
+            <button
+              type="button"
+              data-action="back-dashboard"
+              class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition hover:border-teal-300 hover:text-teal-700"
+            >
+
+              <i
+                data-lucide="arrow-left"
+                class="h-4 w-4"
+              ></i>
+
+              Dashboard
+
+            </button>
+
+
+            <i
+              data-lucide="chevron-right"
+              class="h-4 w-4 text-slate-400"
+            ></i>
+
+
+            <div class="flex items-center gap-2">
+
+              <div class="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+
+                <i
+                  data-lucide="log-in"
+                  class="h-4 w-4"
+                ></i>
+
+              </div>
+
+              <span class="text-sm font-extrabold text-slate-950">
+                Booking Gate-In
+              </span>
+
+            </div>
+
+          </div>
+
+
+          <!-- TITLE -->
+
+          <div class="mb-8">
+
+            <p class="text-xs font-semibold uppercase tracking-widest text-teal-600">
+              Formulir
+            </p>
+
+            <h1 class="mt-1 text-3xl font-extrabold text-slate-950">
+              Booking Gate-In
+            </h1>
+
+            <p class="mt-2 text-sm text-slate-500">
+              Isi nomor kontainer, lalu kirim ke n8n
+              untuk diproses ke Odoo ERP.
+            </p>
+
+          </div>
+
+
+          <form
+            id="bookingGateInForm"
+            novalidate
+          >
+
+            <div class="grid gap-6 lg:grid-cols-[1fr_360px]">
+
+
+              <!-- LEFT -->
+
+              <div class="space-y-5">
+
+                <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+
+                  <div class="mb-5 flex items-center justify-between">
+
+                    <h3 class="flex items-center gap-2 text-sm font-extrabold uppercase tracking-widest text-slate-400">
+
+                      <i
+                        data-lucide="container"
+                        class="h-4 w-4 text-teal-500"
+                      ></i>
+
+                      Nomor Kontainer
+
+                    </h3>
+
+
+                    <button
+                      type="button"
+                      data-action="add-container-row"
+                      class="inline-flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-bold text-teal-700 transition hover:bg-teal-100"
+                    >
+
+                      <i
+                        data-lucide="plus"
+                        class="h-3.5 w-3.5"
+                      ></i>
+
+                      Tambah Kontainer
+
+                    </button>
+
+                  </div>
+
+
+                  <div
+                    id="containerList"
+                    class="space-y-3"
+                  >
+
+                    ${buildContainerRowHtml(1)}
+
+                  </div>
+
+
+                  <p class="mt-4 text-xs text-slate-400">
+
+                    Format: 4 huruf + 7 angka.
+
+                    Contoh:
+
+                    <span class="font-mono font-semibold">
+                      TEMU1234567
+                    </span>
+
+                  </p>
+
+                </div>
+
+              </div>
+
+
+              <!-- RIGHT -->
+
+              <div class="space-y-5">
+
+
+                <!-- SENDER -->
+
+                <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+
+                  <h3 class="mb-5 flex items-center gap-2 text-sm font-extrabold uppercase tracking-widest text-slate-400">
+
+                    <i
+                      data-lucide="building-2"
+                      class="h-4 w-4 text-teal-500"
+                    ></i>
+
+                    Pengirim
+
+                  </h3>
+
+
+                  <div class="space-y-3 rounded-2xl bg-slate-50 p-4 text-sm">
+
+                    <div class="flex items-start justify-between gap-2">
+
+                      <span class="text-slate-500">
+                        Partner
+                      </span>
+
+                      <span class="font-bold text-right text-slate-900 break-all">
+                        ${escapeHtml(session.partnerName || "-")}
+                      </span>
+
+                    </div>
+
+
+                    <div class="flex items-start justify-between gap-2">
+
+                      <span class="text-slate-500">
+                        Partner ID
+                      </span>
+
+                      <span class="font-mono font-semibold text-slate-700">
+                        ${escapeHtml(session.partnerId || "-")}
+                      </span>
+
+                    </div>
+
+
+                    <div class="flex items-start justify-between gap-2">
+
+                      <span class="text-slate-500">
+                        Email
+                      </span>
+
+                      <span class="font-semibold text-slate-700 text-right break-all">
+                        ${escapeHtml(session.email || "-")}
+                      </span>
+
+                    </div>
+
+                  </div>
+
+                </div>
+
+
+                <!-- SUBMIT -->
+
+                <div class="rounded-[2rem] border border-teal-100 bg-teal-50 p-6 shadow-sm">
+
+                  <p class="mb-4 text-sm leading-6 text-teal-800">
+                    Pastikan semua nomor kontainer
+                    sudah benar sebelum mengirim booking.
+                  </p>
+
+
+                  <button
+                    id="submitGateInBtn"
+                    type="submit"
+                    class="group flex w-full items-center justify-center gap-3 rounded-2xl bg-teal-600 px-5 py-4 text-sm font-bold text-white shadow-lg shadow-teal-600/25 transition hover:bg-teal-700 focus:outline-none focus:ring-4 focus:ring-teal-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+
+                    <span id="submitGateInText">
+                      Kirim Booking Gate-In
+                    </span>
+
+                    <i
+                      id="submitGateInIcon"
+                      data-lucide="send"
+                      class="h-5 w-5 transition group-hover:translate-x-0.5"
+                    ></i>
+
+                  </button>
+
+                </div>
+
+              </div>
+
+            </div>
+
+          </form>
+
+
+          <div
+            id="gateInResult"
+            class="hidden mt-6"
+          ></div>
+
+
+        </section>
+
+      </main>
+    `);
+
+    refreshIcons();
+  }
+
+
+  // ============================================================
+  // CONTAINER ROW
+  // ============================================================
+
+  function buildContainerRowHtml(index) {
+    return `
+      <div class="container-row flex items-center gap-2">
+
+        <div class="relative flex-1">
+
+          <i
+            data-lucide="box"
+            class="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+          ></i>
+
+          <input
+            type="text"
+            name="container[]"
+            autocomplete="off"
+            placeholder="Contoh: TEMU1234567"
+            maxlength="11"
+            class="container-input w-full rounded-2xl border border-slate-200 bg-slate-50 px-10 py-3.5 text-sm font-mono uppercase outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
+            required
+          >
+
+        </div>
+
+
+        <button
+          type="button"
+          data-action="remove-container-row"
+          class="remove-container-btn flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-400 transition hover:bg-red-100 hover:text-red-600"
+          title="Hapus baris ini"
+        >
+
+          <i
+            data-lucide="trash-2"
+            class="h-4 w-4"
+          ></i>
+
+        </button>
+
+      </div>
+    `;
+  }
+
+
+  function addContainerRow() {
+    const list =
+      document.getElementById("containerList");
+
+    if (!list) {
+      return;
+    }
+
+    const count =
+      list.querySelectorAll(".container-row").length + 1;
+
+    const div =
+      document.createElement("div");
+
+    div.innerHTML =
+      buildContainerRowHtml(count).trim();
+
+    const row =
+      div.firstElementChild;
+
+    if (!row) {
+      return;
+    }
+
+    list.appendChild(row);
+
+    refreshIcons();
+
+    const newInput =
+      row.querySelector("input");
+
+    if (newInput) {
+      newInput.focus();
+    }
+  }
+
+
+  function removeContainerRow(btn) {
+    const list =
+      document.getElementById("containerList");
+
+    if (!list) {
+      return;
+    }
+
+    const rows =
+      list.querySelectorAll(".container-row");
+
+    if (rows.length <= 1) {
+      showToast(
+        "Minimal harus ada 1 nomor kontainer.",
+        "error"
+      );
+
+      return;
+    }
+
+    const row =
+      btn.closest(".container-row");
+
+    if (row) {
+      row.remove();
+    }
+  }
+
+
+  // ============================================================
+  // SUBMIT GATE-IN
+  // ============================================================
+
+  async function handleBookingGateIn(event) {
+    event.preventDefault();
+
+    const form = event.target;
+    const session = state.session || {};
+
+    const containerInputs =
+      form.querySelectorAll(
+        "input[name='container[]']"
+      );
+
+    const containers =
+      Array.from(containerInputs)
+        .map(function(el) {
+          return el.value
+            .trim()
+            .toUpperCase();
+        })
+        .filter(function(value) {
+          return value !== "";
+        });
+
+
+    if (containers.length === 0) {
+      showToast(
+        "Minimal harus ada 1 nomor kontainer.",
+        "error"
+      );
+
+      return;
+    }
+
+
+    const containerPattern =
+      /^[A-Z]{4}\d{7}$/;
+
+
+    const invalidContainers =
+      containers.filter(function(container) {
+        return !containerPattern.test(container);
+      });
+
+
+    if (invalidContainers.length > 0) {
+      showToast(
+        "Format kontainer tidak valid: " +
+        invalidContainers.join(", "),
+        "error"
+      );
+
+      return;
+    }
+
+
+    setGateInLoading(true);
+
+
+    try {
+      const formData = {
+        containers: containers,
+        customerName:
+          session.partnerName || "",
+        partnerId:
+          session.partnerId || "",
+        userEmail:
+          session.email || "",
+        uid:
+          session.uid || ""
+      };
+
+
+      const response =
+        await runServer(
+          "apiCreateBookingGateIn",
+          formData
+        );
+
+
+      if (!isSuccessResponse(response)) {
+        throw new Error(
+          response && response.message
+            ? response.message
+            : "Booking gagal."
+        );
+      }
+
+
+      renderGateInResult(
+        true,
+        containers
+      );
+
+
+      showToast(
+        "Booking Gate-In berhasil dikirim.",
+        "success"
+      );
+
+
+    } catch (error) {
+
+      console.error(
+        "GATE-IN ERROR:",
+        error
+      );
+
+
+      renderGateInResult(
+        false,
+        containers,
+        error.message
+      );
+
+
+      showToast(
+        error.message ||
+        "Booking gagal.",
+        "error"
+      );
+
+
+    } finally {
+      setGateInLoading(false);
+    }
+  }
+
+
+  // ============================================================
+  // GATE-IN LOADING
+  // ============================================================
+
+  function setGateInLoading(isLoading) {
+    const btn =
+      document.getElementById(
+        "submitGateInBtn"
+      );
+
+    const text =
+      document.getElementById(
+        "submitGateInText"
+      );
+
+    const icon =
+      document.getElementById(
+        "submitGateInIcon"
+      );
+
+
+    if (!btn || !text) {
+      return;
+    }
+
+
+    btn.disabled =
+      Boolean(isLoading);
+
+
+    text.textContent =
+      isLoading
+        ? "Mengirim..."
+        : "Kirim Booking Gate-In";
+
+
+    if (icon) {
+      if (isLoading) {
+
+        icon.outerHTML =
+          '<span id="submitGateInIcon" class="loader"></span>';
+
+      } else {
+
+        icon.outerHTML =
+          '<i id="submitGateInIcon" data-lucide="send" class="h-5 w-5 transition group-hover:translate-x-0.5"></i>';
+
+        refreshIcons();
+      }
+    }
+  }
+
+
+  // ============================================================
+  // GATE-IN RESULT
+  // ============================================================
+
+  function renderGateInResult(
+    success,
+    containers,
+    errorMessage
+  ) {
+    const panel =
+      document.getElementById(
+        "gateInResult"
+      );
+
+    const session =
+      state.session || {};
+
+
+    if (!panel) {
+      return;
+    }
+
+
+    panel.classList.remove("hidden");
+
+
+    if (success) {
+
+      const containerBadges =
+        containers.map(function(container) {
+
+          return `
+            <span class="inline-flex items-center rounded-lg border border-teal-200 bg-teal-50 px-3 py-1 font-mono text-xs font-semibold text-teal-700">
+              ${escapeHtml(container)}
+            </span>
+          `;
+
+        }).join("");
+
+
+      panel.innerHTML = `
+        <div class="rounded-[2rem] border border-teal-200 bg-white p-6 shadow-sm soft-appear">
+
+          <div class="flex items-start gap-4">
+
+            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-teal-50 text-teal-600">
+
+              <i
+                data-lucide="circle-check-big"
+                class="h-6 w-6"
+              ></i>
+
+            </div>
+
+
+            <div class="flex-1 min-w-0">
+
+              <p class="text-sm font-extrabold text-teal-700">
+                Booking berhasil dikirim
+              </p>
+
+
+              <p class="mt-1 text-sm text-slate-500">
+                Data booking telah diteruskan
+                ke n8n untuk diproses ke Odoo ERP.
+              </p>
+
+
+              <div class="mt-4 rounded-2xl bg-slate-50 p-4 text-sm">
+
+
+                <div class="mb-3 flex items-start justify-between gap-2">
+
+                  <span class="text-slate-500">
+                    Partner
+                  </span>
+
+                  <span class="font-bold text-right text-slate-900">
+                    ${escapeHtml(session.partnerName || "-")}
+                  </span>
+
+                </div>
+
+
+                <div class="flex items-start justify-between gap-2">
+
+                  <span class="text-slate-500">
+                    Email
+                  </span>
+
+                  <span class="font-semibold text-slate-700 text-right break-all">
+                    ${escapeHtml(session.email || "-")}
+                  </span>
+
+                </div>
+
+
+                <div class="mt-3 border-t border-slate-200 pt-3">
+
+                  <p class="mb-2 text-xs text-slate-400">
+                    Kontainer (${containers.length})
+                  </p>
+
+                  <div class="flex flex-wrap gap-2">
+                    ${containerBadges}
+                  </div>
+
+                </div>
+
+              </div>
+
+
+              <button
+                type="button"
+                data-action="back-dashboard"
+                class="mt-5 inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-teal-700"
+              >
+
+                <i
+                  data-lucide="arrow-left"
+                  class="h-4 w-4"
+                ></i>
+
+                Kembali ke dashboard
+
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
+      `;
+
+
+    } else {
+
+      panel.innerHTML = `
+        <div class="rounded-[2rem] border border-red-200 bg-white p-6 shadow-sm soft-appear">
+
+          <div class="flex items-start gap-4">
+
+            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+
+              <i
+                data-lucide="circle-x"
+                class="h-6 w-6"
+              ></i>
+
+            </div>
+
+
+            <div>
+
+              <p class="text-sm font-extrabold text-red-600">
+                Booking gagal dikirim
+              </p>
+
+              <p class="mt-1 text-sm text-slate-500">
+                ${escapeHtml(
+                  errorMessage ||
+                  "Terjadi kesalahan. Coba beberapa saat lagi."
+                )}
+              </p>
+
+            </div>
+
+          </div>
+
+        </div>
+      `;
+    }
+
+
+    refreshIcons();
+
+
+    panel.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest"
+    });
+  }
+
+</script>
