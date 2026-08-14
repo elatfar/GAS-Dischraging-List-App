@@ -97,6 +97,12 @@ function parseHeaderText(text) {
   var etaVesselMatch = text.match(/ETA\s*Vessel\s*:?\s*([^\n]+)/i);
   if (etaVesselMatch) header.etaVessel = etaVesselMatch[1].trim();
 
+  // Principal: diambil dari baris "TO : <nama perusahaan>" di kop surat.
+  // Anchor ke awal baris (^...\b) + flag "m" supaya tidak salah nyangkut
+  // ke kata lain yang kebetulan diawali "TO" (mis. "TOTAL").
+  var principalMatch = text.match(/^TO\b\s*:?\s*([^\n]+)/im);
+  if (principalMatch) header.principal = principalMatch[1].trim();
+
   // Pecah "MERATUS KATINGAN / BP051N" -> vesselName, voyageNo
   if (header.vesselVoyage) {
     var vParts = header.vesselVoyage.split("/");

@@ -60,8 +60,57 @@ function uploadDischargingList(payload) {
     }
 
 
+    if (payload.isParsed) {
+
+      console.log("PDF SUDAH DIPARSING DI FRONTEND. KIRIM LANGSUNG KE WEBHOOK EXTRACTION.");
+
+      // ==========================================================
+      // KIRIM LANGSUNG KE WEBHOOK EXTRACTION N8N
+      //
+      // Tidak lewat sendDischargingToN8N_ / N8N_DISCHARGING_UPLOAD_URL
+      // lagi -- payload dibentuk sesuai skema target
+      // (header + details + total_containers) dan langsung di-POST
+      // ke N8N_PDF_CONTAINER_EXTRACTION_URL.
+      // ==========================================================
+
+      let extractionResponse;
+
+      try {
+
+        extractionResponse = sendParsedDischargingToExtractionWebhook_(
+          payload.parsedHeader || {},
+          payload.parsedContainers || []
+        );
+
+      } catch (error) {
+
+        console.error(
+          "DISCHARGING EXTRACTION ERROR: " +
+          (error && error.stack ? error.stack : error)
+        );
+
+        return {
+          success: false,
+          status: "error",
+          error_code: "EXTRACTION_WEBHOOK_ERROR",
+          message: "Gagal mengirim data ke webhook extraction n8n.",
+          detail: error && error.message ? error.message : String(error)
+        };
+
+      }
+
+      console.log(
+        "DISCHARGING EXTRACTION RESPONSE: " +
+        JSON.stringify(extractionResponse)
+      );
+
+      return extractionResponse;
+
+    }
+
+
     // ==========================================================
-    // BUILD N8N PAYLOAD
+    // BUILD N8N PAYLOAD (jalur lama: file belum diparsing di FE)
     // ==========================================================
 
     const isPdfFile =
@@ -75,12 +124,7 @@ function uploadDischargingList(payload) {
       userAgent: String(payload.userAgent || "")
     };
 
-    if (payload.isParsed) {
-      console.log("PDF SUDAH DIPARSING DI FRONTEND.");
-      n8nPayload.isParsed = true;
-      n8nPayload.parsedHeader = payload.parsedHeader || {};
-      n8nPayload.parsedContainers = payload.parsedContainers || [];
-    } else if (isPdfFile) {
+    if (isPdfFile) {
       console.log("PARSING PDF IN APPS SCRIPT...");
       const parsedData = parseDischargingPDF(payload.base64, payload.fileName);
       

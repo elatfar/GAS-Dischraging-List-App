@@ -1261,57 +1261,161 @@
   // ============================================================
   // CLIENT SIDE PDF PARSER (PDF.JS)
   // ============================================================
-  
+  //
+  // CATATAN PERBAIKAN:
+  //
+  // Bug lama: textContent.items di-join dengan spasi untuk SATU HALAMAN
+  // PENUH, dan "\n" hanya ditambahkan SEKALI di akhir halaman. Akibatnya
+  // seluruh isi halaman (header + 8 baris kontainer + footer) menjadi
+  // SATU baris raksasa. Saat di-parse per baris, hanya kontainer PERTAMA
+  // yang ketemu (containerMatch di-non-global), size/type juga salah
+  // ambil karena dicari di seluruh teks halaman yang sudah dibersihkan
+  // dari semua spasi -> bisa nyangkut ke digit/kode yang salah.
+  //
+  // Perbaikan: rekonstruksi baris berdasarkan posisi Y tiap item teks
+  // dari PDF.js (item.transform[5]), lalu urutkan item dalam satu baris
+  // berdasarkan posisi X (item.transform[4]). Ini menghasilkan teks yang
+  // strukturnya jauh lebih dekat dengan tampilan visual PDF, sehingga
+  // setiap baris tabel kontainer benar-benar terpisah oleh "\n".
+  // ============================================================
+
+  function groupPdfTextItemsIntoLines(items, yTolerance) {
+    yTolerance = yTolerance || 3;
+
+    if (!items || items.length === 0) return [];
+
+    // Urutkan dulu top-to-bottom (Y besar -> kecil di koordinat PDF),
+    // lalu left-to-right (X kecil -> besar) sebagai tie-breaker awal.
+    var sorted = items.slice().sort(function(a, b) {
+      var dy = b.transform[5] - a.transform[5];
+      if (Math.abs(dy) > yTolerance) return dy;
+      return a.transform[4] - b.transform[4];
+    });
+
+    var lines = [];
+    var currentLine = [];
+    var currentY = null;
+
+    for (var i = 0; i < sorted.length; i++) {
+      var item = sorted[i];
+      var y = item.transform[5];
+
+      if (currentY === null || Math.abs(y - currentY) <= yTolerance) {
+        currentLine.push(item);
+        if (currentY === null) currentY = y;
+      } else {
+        lines.push(currentLine);
+        currentLine = [item];
+        currentY = y;
+      }
+    }
+    if (currentLine.length > 0) lines.push(currentLine);
+
+    return lines.map(function(lineItems) {
+      var ordered = lineItems.slice().sort(function(a, b) {
+        return a.transform[4] - b.transform[4];
+      });
+      return ordered
+        .map(function(it) { return it.str; })
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }).filter(function(lineText) { return lineText.length > 0; });
+  }
+
+  async function extractPdfTextWithLines(file) {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = "";
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const lines = groupPdfTextItemsIntoLines(textContent.items, 3);
+      fullText += lines.join("\n") + "\n";
+    }
+
+    return fullText;
+  }
+
   function parseDischargingAdviceTextClient(text) {
     var result = {
       header: {},
       containers: []
     };
-    
-    var vesselMatch = text.match(/Vessel\/Voyage\s*([A-Za-z0-9\s/.-]+)/i);
+
+    // Header: sekarang baris sudah benar-benar terpisah oleh "\n",
+    // jadi cukup ambil sisa teks sampai akhir baris ([^\n]+) tanpa
+    // resiko "bocor" ke label/field berikutnya.
+    var vesselMatch = text.match(/Vessel\s*\/\s*Voyage\s+([^\n]+)/i);
     if (vesselMatch) result.header.vesselVoyage = vesselMatch[1].trim();
-    
-    var polPodMatch = text.match(/POL\s*-\s*POD\s*:\s*([A-Za-z0-9\s,.-]+)/i);
+
+    var polPodMatch = text.match(/POL\s*-\s*POD\s*:?\s*([^\n]+)/i);
     if (polPodMatch) result.header.polPod = polPodMatch[1].trim();
-    
-    var tdVesselMatch = text.match(/TD Vessel\s*:\s*([A-Za-z0-9\s,]+)/i);
+
+    var tdVesselMatch = text.match(/TD\s*Vessel\s*:?\s*([^\n]+)/i);
     if (tdVesselMatch) result.header.tdVessel = tdVesselMatch[1].trim();
-    
-    var etaVesselMatch = text.match(/ETA Vessel\s*:\s*([A-Za-z0-9\s,]+)/i);
+
+    var etaVesselMatch = text.match(/ETA\s*Vessel\s*:?\s*([^\n]+)/i);
     if (etaVesselMatch) result.header.etaVessel = etaVesselMatch[1].trim();
-    
-    // PDF.js join (" ") often creates spaces between letters if not careful,
-    // but typically container number is matched by stripping spaces or using regex.
-    // The exact regex depends on how pdf.js parsed the string. 
-    // Container usually: 4 letters + 7 digits (e.g. K K T U 8 2 5 8 2 7 3 or KKTU8258273)
-    // We remove all spaces from the line to be safe for container number matching
+
+    // Principal: diambil dari baris "TO : <nama perusahaan>" di kop surat.
+    // Dianchor ke AWAL BARIS (^...\b) supaya tidak salah nyangkut ke kata
+    // lain yang kebetulan diawali "TO" (mis. "TOTAL"). Multiline flag "m"
+    // dibutuhkan karena "^" harus cocok di tiap baris, bukan cuma awal teks.
+    var principalMatch = text.match(/^TO\b\s*:?\s*([^\n]+)/im);
+    if (principalMatch) result.header.principal = principalMatch[1].trim();
+
+    // Kontainer: proses PER BARIS (bukan seluruh halaman), dan cari
+    // size/type dari token SETELAH nomor kontainer pada baris yang
+    // sama saja -- bukan dari string gabungan tanpa spasi yang bisa
+    // salah nyangkut ke digit dari nomor kontainer/seal itu sendiri.
     var lines = text.split('\n');
+
     for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      var cleanLine = line.replace(/\s+/g, ''); // KKTU8258273
-      
-      var containerMatch = cleanLine.match(/([A-Z]{4}\d{7})/i);
-      
-      if (containerMatch) {
-        var containerNo = containerMatch[1].toUpperCase();
-        var sizeMatch = cleanLine.match(/(20|40|45)/);
-        var typeMatch = cleanLine.match(/(GP|HC|RF|OT|FR|TK|HQ)/i);
-        
-        var exists = result.containers.find(function(c) {
-          return c.containerNo === containerNo;
-        });
-        
-        if (!exists) {
-          result.containers.push({
-            containerNo: containerNo,
-            size: sizeMatch ? sizeMatch[1] : "",
-            type: typeMatch ? typeMatch[1].toUpperCase() : "",
-            rawLine: line.trim()
-          });
+      var rawLine = lines[i].trim();
+      if (!rawLine) continue;
+
+      var tokens = rawLine.split(/\s+/);
+      var containerNo = null;
+      var containerIdx = -1;
+
+      for (var t = 0; t < tokens.length; t++) {
+        var cleanToken = tokens[t].replace(/[^A-Za-z0-9]/g, '');
+        var m = cleanToken.match(/^([A-Z]{4}\d{7})/i);
+        if (m) {
+          containerNo = m[1].toUpperCase();
+          containerIdx = t;
+          break;
         }
       }
+
+      if (!containerNo) continue;
+
+      var exists = result.containers.some(function(c) {
+        return c.containerNo === containerNo;
+      });
+      if (exists) continue;
+
+      var size = "";
+      var type = "";
+      var restTokens = tokens.slice(containerIdx + 1);
+
+      for (var r = 0; r < restTokens.length; r++) {
+        var tok = restTokens[r];
+        if (!size && /^(20|40|45)$/.test(tok)) size = tok;
+        if (!type && /^(GP|HC|RF|OT|FR|TK|HQ)$/i.test(tok)) type = tok.toUpperCase();
+        if (size && type) break;
+      }
+
+      result.containers.push({
+        containerNo: containerNo,
+        size: size,
+        type: type,
+        rawLine: rawLine
+      });
     }
-    
+
     return result;
   }
 
@@ -1335,16 +1439,7 @@
 
     try {
       console.log("Mengekstrak teks dari PDF menggunakan PDF.js...");
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      let fullText = "";
-
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items.map(item => item.str).join(" ");
-        fullText += pageText + "\n";
-      }
+      const fullText = await extractPdfTextWithLines(file);
 
       const parsedData = parseDischargingAdviceTextClient(fullText);
       console.log("Parsed PDF Data:", parsedData);
@@ -1429,6 +1524,10 @@
             <div>
               <label class="block text-xs font-semibold text-slate-500 mb-1">ETA Vessel</label>
               <input type="text" id="headerEtaVessel" class="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm outline-none focus:border-teal-500" value="${parsedData.header?.etaVessel || ''}">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-1">Principal</label>
+              <input type="text" id="headerPrincipal" class="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm outline-none focus:border-teal-500" value="${parsedData.header?.principal || ''}">
             </div>
           </div>
 
@@ -1530,7 +1629,8 @@
         vesselVoyage: document.getElementById("headerVesselVoyage")?.value || "",
         polPod: document.getElementById("headerPolPod")?.value || "",
         tdVessel: document.getElementById("headerTdVessel")?.value || "",
-        etaVessel: document.getElementById("headerEtaVessel")?.value || ""
+        etaVessel: document.getElementById("headerEtaVessel")?.value || "",
+        principal: document.getElementById("headerPrincipal")?.value || ""
       };
 
       // Build Containers
