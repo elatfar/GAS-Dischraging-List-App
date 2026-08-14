@@ -1734,6 +1734,7 @@
     if (!root) return;
 
     const rejectedLines = Array.isArray(result.rejected_lines) ? result.rejected_lines : [];
+    const createdLines  = Array.isArray(result.created_lines)  ? result.created_lines  : [];
     const totalRows    = Number(result.total_rows    || 0);
     const createdCount = Number(result.created_count || 0);
     const rejectedCount= Number(result.rejected_count|| 0);
@@ -1881,7 +1882,10 @@
 
         </div>
 
-        <!-- REJECTED LINES / SUCCESS FOOTER -->
+        <!-- CREATED / REJECTED LINES / SUCCESS FOOTER -->
+        ${(isSuccess || isPartial) && createdLines.length > 0
+          ? renderCreatedDischargingLines(createdLines)
+          : ""}
         ${rejectedLines.length > 0
           ? renderRejectedDischargingLines(rejectedLines, isPartial)
           : isSuccess
@@ -1908,6 +1912,89 @@
 
     refreshIcons();
     root.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+
+  // ============================================================
+  // CREATED CONTAINERS TABLE
+  // ============================================================
+
+  function renderCreatedDischargingLines(rows) {
+    return `
+      <div class="border-t border-teal-100">
+
+        <!-- Header -->
+        <div class="flex flex-col gap-3 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 class="flex items-center gap-2 font-extrabold text-slate-950">
+              <i data-lucide="circle-check" class="h-4 w-4 text-teal-500"></i>
+              Container Berhasil Dibuat
+            </h3>
+            <p class="mt-1 text-sm text-slate-500">
+              Container berikut berhasil dimasukkan ke Discharging List.
+            </p>
+          </div>
+          <span class="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-xl border border-teal-100 bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-700">
+            <i data-lucide="circle-check" class="h-3.5 w-3.5"></i>
+            ${rows.length} Container
+          </span>
+        </div>
+
+        <!-- Table -->
+        <div class="overflow-x-auto pb-1">
+          <table class="w-full text-sm">
+            <thead class="border-y border-teal-100 bg-teal-50/60">
+              <tr class="text-xs font-bold uppercase tracking-wide text-teal-700">
+                <th class="whitespace-nowrap px-5 py-3 text-left">#</th>
+                <th class="whitespace-nowrap px-5 py-3 text-left">Container No.</th>
+                <th class="whitespace-nowrap px-5 py-3 text-left">Principal</th>
+                <th class="whitespace-nowrap px-5 py-3 text-left">Size</th>
+                <th class="whitespace-nowrap px-5 py-3 text-left">ISO Code</th>
+                <th class="whitespace-nowrap px-5 py-3 text-left">Discharging List</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(function(row, index) {
+                const dlNo = row.discharge_list_no || row.discharging_list_no || "";
+                const dlId = row.discharge_list_id || row.discharging_list_id || "";
+                const isoCode = row.iso_code
+                  ? `<span class="inline-flex rounded-lg bg-teal-100 px-2.5 py-1 font-mono text-xs font-bold text-teal-800">${escapeHtml(row.iso_code)}</span>`
+                  : `<span class="text-xs text-slate-300">—</span>`;
+                const dlBadge = dlNo
+                  ? `<span class="inline-flex items-center gap-1.5 rounded-lg border border-teal-100 bg-white px-2.5 py-1 font-mono text-xs font-semibold text-teal-700 shadow-sm">
+                       <i data-lucide="file-text" class="h-3 w-3"></i>${escapeHtml(dlNo)}
+                     </span>`
+                  : dlId
+                    ? `<span class="text-xs font-semibold text-slate-500">ID ${escapeHtml(String(dlId))}</span>`
+                    : `<span class="text-xs text-slate-300">—</span>`;
+                return `
+                  <tr class="border-b border-teal-50 transition last:border-b-0 hover:bg-teal-50/40">
+                    <td class="px-5 py-3.5 text-xs text-slate-400 tabular-nums">${index + 1}</td>
+                    <td class="whitespace-nowrap px-5 py-3.5">
+                      <div class="inline-flex items-center gap-2 font-mono text-sm font-bold text-slate-950">
+                        <i data-lucide="container" class="h-4 w-4 text-teal-400"></i>
+                        ${escapeHtml(row.container_number || "-")}
+                      </div>
+                    </td>
+                    <td class="whitespace-nowrap px-5 py-3.5">
+                      <span class="font-semibold text-slate-700">${escapeHtml(row.principal_name || "—")}</span>
+                    </td>
+                    <td class="whitespace-nowrap px-5 py-3.5">
+                      ${row.size
+                        ? `<span class="inline-flex rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">${escapeHtml(row.size)}</span>`
+                        : `<span class="text-xs text-slate-300">—</span>`}
+                    </td>
+                    <td class="whitespace-nowrap px-5 py-3.5">${isoCode}</td>
+                    <td class="whitespace-nowrap px-5 py-3.5">${dlBadge}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    `;
   }
 
 
