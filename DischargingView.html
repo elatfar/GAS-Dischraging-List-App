@@ -1,4 +1,4 @@
-<script>
+﻿<script>
 
   const dischargingState = {
     file: null,
@@ -361,11 +361,7 @@
               </div>
 
 
-              <!-- RESULT -->
-
-              <div
-                id="dischargingResult"
-              ></div>
+              <!-- RESULT placeholder (actual result rendered below grid) -->
 
             </div>
 
@@ -1673,17 +1669,46 @@
       const response = await runDischargingServer(payload);
       console.log("SUBMIT PARSED RESPONSE:", response);
 
-      if (!isSuccessResponse(response)) {
-        throw new Error(
-          response && response.message
-            ? response.message
-            : "Upload (Parsed) gagal."
-        );
+      // Tangkap error teknis murni (tidak ada response sama sekali)
+      if (!response) {
+        throw new Error("Tidak ada response dari server.");
       }
 
-      showToast("Data berhasil dikirim!", "success");
-      document.getElementById("dischargingParsedForm").classList.add("hidden");
-      renderDischargingResult(response.data || {});
+      // Error teknis dari Apps Script (bukan business rejection dari n8n)
+      if (
+        response.success === false &&
+        response.error_code &&
+        !response.status
+      ) {
+        throw new Error(response.detail || response.message || "Upload gagal.");
+      }
+
+      // Normalise: data bisa ada di response.data atau di root response langsung
+      const resultData = (
+        response.data &&
+        typeof response.data === "object" &&
+        (response.data.total_rows !== undefined || response.data.status !== undefined)
+      )
+        ? response.data
+        : response;
+
+      // Sembunyikan parsed form
+      const parsedFormEl = document.getElementById("dischargingParsedForm");
+      if (parsedFormEl) parsedFormEl.classList.add("hidden");
+
+      // Render result card (sukses, partial, maupun rejected)
+      renderDischargingResult(resultData);
+
+      // Toast sesuai status
+      const createdCount  = Number(resultData.created_count  || 0);
+      const rejectedCount = Number(resultData.rejected_count || 0);
+      if (createdCount > 0 && rejectedCount === 0) {
+        showToast(resultData.message || "Discharging List berhasil diproses.", "success");
+      } else if (createdCount > 0 && rejectedCount > 0) {
+        showToast(resultData.message || `${createdCount} container berhasil, ${rejectedCount} ditolak.`, "warning");
+      } else {
+        showToast(resultData.message || "Semua container ditolak.", "error");
+      }
 
     } catch (error) {
       console.error(error);
@@ -1705,776 +1730,261 @@
 
   function renderDischargingResult(result) {
 
-    const root =
-      document.getElementById(
-        "dischargingResult"
-      );
+    const root = document.getElementById("dischargingResult");
+    if (!root) return;
 
+    const rejectedLines = Array.isArray(result.rejected_lines) ? result.rejected_lines : [];
+    const totalRows    = Number(result.total_rows    || 0);
+    const createdCount = Number(result.created_count || 0);
+    const rejectedCount= Number(result.rejected_count|| 0);
 
-    if (!root) {
-      return;
-    }
+    // ── Status ──────────────────────────────────────────────
+    const isSuccess = result.status === "success"        || (createdCount > 0 && rejectedCount === 0);
+    const isPartial = result.status === "partial_success"|| (createdCount > 0 && rejectedCount > 0);
+    const isFailed  = result.status === "rejected"       || (createdCount === 0 && rejectedCount > 0);
 
-
-    const rejectedLines =
-      Array.isArray(
-        result.rejected_lines
-      )
-        ? result.rejected_lines
-        : [];
-
-
-    const totalRows =
-      Number(
-        result.total_rows || 0
-      );
-
-
-    const createdCount =
-      Number(
-        result.created_count || 0
-      );
-
-
-    const rejectedCount =
-      Number(
-        result.rejected_count || 0
-      );
-
-
-    // ==========================================================
-    // STATUS
-    // ==========================================================
-
-    const isSuccess =
-      createdCount > 0 &&
-      rejectedCount === 0;
-
-
-    const isPartial =
-      createdCount > 0 &&
-      rejectedCount > 0;
-
-
-    const isFailed =
-      createdCount === 0 &&
-      rejectedCount > 0;
-
-
-    let statusLabel =
-      "Status Tidak Diketahui";
-
-
-    let statusClass =
-      "bg-slate-50 text-slate-700 border-slate-200";
-
-
-    let statusIcon =
-      "circle-help";
-
-
-    let messageClass =
-      "border-slate-200 bg-slate-50 text-slate-700";
-
+    let statusLabel, statusBg, statusText, statusBorder, statusIcon, bannerBg, bannerBorder, bannerText;
 
     if (isSuccess) {
-
-      statusLabel =
-        "Berhasil";
-
-      statusClass =
-        "bg-teal-50 text-teal-700 border-teal-200";
-
-      statusIcon =
-        "circle-check";
-
-      messageClass =
-        "border-teal-100 bg-teal-50 text-teal-800";
-
+      statusLabel  = "Berhasil";
+      statusBg     = "bg-teal-50";
+      statusText   = "text-teal-700";
+      statusBorder = "border-teal-200";
+      statusIcon   = "circle-check";
+      bannerBg     = "bg-teal-50/60";
+      bannerBorder = "border-teal-100";
+      bannerText   = "text-teal-800";
+    } else if (isPartial) {
+      statusLabel  = "Berhasil Sebagian";
+      statusBg     = "bg-amber-50";
+      statusText   = "text-amber-700";
+      statusBorder = "border-amber-200";
+      statusIcon   = "circle-alert";
+      bannerBg     = "bg-amber-50/60";
+      bannerBorder = "border-amber-100";
+      bannerText   = "text-amber-800";
+    } else {
+      statusLabel  = "Ditolak";
+      statusBg     = "bg-red-50";
+      statusText   = "text-red-700";
+      statusBorder = "border-red-200";
+      statusIcon   = "circle-x";
+      bannerBg     = "bg-red-50/60";
+      bannerBorder = "border-red-100";
+      bannerText   = "text-red-700";
     }
 
-    else if (isPartial) {
+    // ── Progress ─────────────────────────────────────────────
+    const successPct = totalRows > 0 ? Math.round((createdCount  / totalRows) * 100) : 0;
+    const rejectPct  = totalRows > 0 ? Math.round((rejectedCount / totalRows) * 100) : 0;
 
-      statusLabel =
-        "Berhasil Sebagian";
+    // ── DL info pills ────────────────────────────────────────
+    const dlInfoHtml = (result.discharging_list_no || result.discharging_list_id) ? `
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        ${result.discharging_list_no ? `
+          <span class="inline-flex items-center gap-1.5 rounded-xl border border-teal-100 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm">
+            <i data-lucide="file-text" class="h-3.5 w-3.5 text-teal-500"></i>
+            ${escapeHtml(result.discharging_list_no)}
+          </span>` : ""}
+        ${result.discharging_list_id ? `
+          <span class="inline-flex items-center gap-1.5 rounded-xl border border-slate-100 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 shadow-sm">
+            <i data-lucide="hash" class="h-3.5 w-3.5 text-slate-400"></i>
+            ID ${escapeHtml(String(result.discharging_list_id))}
+          </span>` : ""}
+      </div>` : "";
 
-      statusClass =
-        "bg-amber-50 text-amber-700 border-amber-200";
-
-      statusIcon =
-        "triangle-alert";
-
-      messageClass =
-        "border-amber-100 bg-amber-50 text-amber-800";
-
-    }
-
-    else if (isFailed) {
-
-      statusLabel =
-        "Ditolak";
-
-      statusClass =
-        "bg-red-50 text-red-700 border-red-200";
-
-      statusIcon =
-        "circle-x";
-
-      messageClass =
-        "border-red-100 bg-red-50 text-red-700";
-    }
-
-
+    // ── Render ────────────────────────────────────────────────
     root.innerHTML = `
+      <div class="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm soft-appear">
 
-      <div
-        class="
-          overflow-hidden
-          rounded-[2rem]
-          border
-          border-slate-200
-          bg-white
-          shadow-sm
-          soft-appear
-        "
-      >
+        <!-- TOP BANNER -->
+        <div class="border-b ${bannerBorder} ${bannerBg} px-6 py-5">
 
-        <div class="p-6">
+          <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 
-
-          <!-- RESULT HEADER -->
-
-          <div
-            class="
-              flex
-              flex-col
-              gap-4
-              sm:flex-row
-              sm:items-start
-              sm:justify-between
-            "
-          >
-
-            <div>
-
-              <div
-                class="
-                  flex
-                  items-center
-                  gap-2
-                "
-              >
-
-                <div
-                  class="
-                    flex
-                    h-9
-                    w-9
-                    items-center
-                    justify-center
-                    rounded-xl
-                    bg-teal-50
-                    text-teal-600
-                  "
-                >
-
-                  <i
-                    data-lucide="clipboard-check"
-                    class="h-4 w-4"
-                  ></i>
-
-                </div>
-
-
-                <div>
-
-                  <p
-                    class="
-                      text-xs
-                      font-semibold
-                      uppercase
-                      tracking-widest
-                      text-teal-600
-                    "
-                  >
-                    Hasil Validasi
-                  </p>
-
-                  <h2
-                    class="
-                      mt-0.5
-                      text-lg
-                      font-extrabold
-                      text-slate-950
-                    "
-                  >
-                    Discharging List
-                  </h2>
-
-                </div>
-
+            <div class="flex items-start gap-3">
+              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm ${statusText}">
+                <i data-lucide="${statusIcon}" class="h-5 w-5"></i>
               </div>
-
-
-              ${
-                result.discharging_list_no
-
-                  ? `
-
-                    <div
-                      class="
-                        mt-3
-                        text-sm
-                        text-slate-500
-                      "
-                    >
-
-                      Nomor Discharging List:
-
-                      <span
-                        class="
-                          font-bold
-                          text-slate-800
-                        "
-                      >
-                        ${escapeHtml(
-                          result.discharging_list_no
-                        )}
-                      </span>
-
-                    </div>
-
-                  `
-
-                  : ""
-              }
-
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-widest ${statusText}">Hasil Proses</p>
+                <h2 class="mt-0.5 text-lg font-extrabold text-slate-950">Discharging List</h2>
+                ${dlInfoHtml}
+              </div>
             </div>
 
-
-            <span
-              class="
-                inline-flex
-                w-fit
-                items-center
-                gap-2
-                rounded-full
-                border
-                px-3
-                py-1.5
-                text-xs
-                font-bold
-                ${statusClass}
-              "
-            >
-
-              <i
-                data-lucide="${statusIcon}"
-                class="h-4 w-4"
-              ></i>
-
+            <span class="inline-flex w-fit shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold ${statusBg} ${statusText} ${statusBorder}">
+              <i data-lucide="${statusIcon}" class="h-3.5 w-3.5"></i>
               ${statusLabel}
-
             </span>
 
           </div>
 
+          ${result.message ? `
+            <p class="mt-4 text-sm leading-6 ${bannerText}">${escapeHtml(result.message)}</p>
+          ` : ""}
 
-          <!-- MESSAGE -->
+        </div>
 
-          ${
-            result.message
+        <!-- STATS -->
+        <div class="px-6 py-5">
 
-              ? `
+          <div class="grid grid-cols-3 gap-3">
 
-                <div
-                  class="
-                    mt-5
-                    rounded-2xl
-                    border
-                    px-4
-                    py-3
-                    text-sm
-                    leading-6
-                    ${messageClass}
-                  "
-                >
-                  ${escapeHtml(
-                    result.message
-                  )}
-                </div>
-
-              `
-
-              : ""
-          }
-
-
-          <!-- COUNTERS -->
-
-          <div
-            class="
-              mt-6
-              grid
-              grid-cols-1
-              gap-3
-              sm:grid-cols-3
-            "
-          >
-
-
-            <!-- TOTAL -->
-
-            <div
-              class="
-                rounded-2xl
-                border
-                border-slate-100
-                bg-slate-50
-                p-4
-              "
-            >
-
-              <div
-                class="
-                  flex
-                  items-center
-                  gap-2
-                  text-xs
-                  font-semibold
-                  uppercase
-                  tracking-wide
-                  text-slate-500
-                "
-              >
-
-                <i
-                  data-lucide="container"
-                  class="h-4 w-4"
-                ></i>
-
-                Total Container
-
+            <div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <i data-lucide="container" class="h-4 w-4"></i>
+                Total
               </div>
-
-
-              <div
-                class="
-                  mt-3
-                  text-3xl
-                  font-extrabold
-                  text-slate-950
-                "
-              >
-                ${totalRows}
-              </div>
-
+              <div class="mt-2 text-3xl font-extrabold text-slate-950">${totalRows}</div>
+              <div class="mt-1 text-xs text-slate-400">container</div>
             </div>
 
-
-            <!-- SUCCESS -->
-
-            <div
-              class="
-                rounded-2xl
-                border
-                border-teal-100
-                bg-teal-50
-                p-4
-              "
-            >
-
-              <div
-                class="
-                  flex
-                  items-center
-                  gap-2
-                  text-xs
-                  font-semibold
-                  uppercase
-                  tracking-wide
-                  text-teal-700
-                "
-              >
-
-                <i
-                  data-lucide="circle-check"
-                  class="h-4 w-4"
-                ></i>
-
+            <div class="rounded-2xl border border-teal-100 bg-teal-50 p-4">
+              <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-teal-700">
+                <i data-lucide="circle-check" class="h-4 w-4"></i>
                 Berhasil
-
               </div>
-
-
-              <div
-                class="
-                  mt-3
-                  text-3xl
-                  font-extrabold
-                  text-teal-700
-                "
-              >
-                ${createdCount}
-              </div>
-
+              <div class="mt-2 text-3xl font-extrabold text-teal-700">${createdCount}</div>
+              <div class="mt-1 text-xs text-teal-500">${successPct}% dari total</div>
             </div>
 
-
-            <!-- REJECTED -->
-
-            <div
-              class="
-                rounded-2xl
-                border
-                border-red-100
-                bg-red-50
-                p-4
-              "
-            >
-
-              <div
-                class="
-                  flex
-                  items-center
-                  gap-2
-                  text-xs
-                  font-semibold
-                  uppercase
-                  tracking-wide
-                  text-red-700
-                "
-              >
-
-                <i
-                  data-lucide="circle-x"
-                  class="h-4 w-4"
-                ></i>
-
+            <div class="rounded-2xl border ${rejectedCount > 0 ? "border-red-100 bg-red-50" : "border-slate-100 bg-slate-50"} p-4">
+              <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide ${rejectedCount > 0 ? "text-red-700" : "text-slate-400"}">
+                <i data-lucide="circle-x" class="h-4 w-4"></i>
                 Ditolak
-
               </div>
-
-
-              <div
-                class="
-                  mt-3
-                  text-3xl
-                  font-extrabold
-                  text-red-700
-                "
-              >
-                ${rejectedCount}
-              </div>
-
+              <div class="mt-2 text-3xl font-extrabold ${rejectedCount > 0 ? "text-red-700" : "text-slate-300"}">${rejectedCount}</div>
+              <div class="mt-1 text-xs ${rejectedCount > 0 ? "text-red-400" : "text-slate-300"}">${rejectPct}% dari total</div>
             </div>
 
           </div>
 
+          ${totalRows > 0 ? `
+            <div class="mt-5">
+              <div class="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500">
+                <span>Progress Pemrosesan</span>
+                <span>${successPct}% berhasil</span>
+              </div>
+              <div class="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                <div
+                  class="h-full rounded-full transition-all duration-700 ${isSuccess ? "bg-teal-500" : isPartial ? "bg-amber-400" : "bg-red-400"}"
+                  style="width: ${successPct}%"
+                ></div>
+              </div>
+              ${isPartial ? `
+                <div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div class="h-full rounded-full bg-red-300 transition-all duration-700" style="width: ${rejectPct}%"></div>
+                </div>` : ""}
+            </div>
+          ` : ""}
+
         </div>
 
-
-        ${
-          rejectedLines.length > 0
-
-            ? renderRejectedDischargingLines(
-                rejectedLines
-              )
-
-            : isSuccess
-
-              ? `
-
-                <div
-                  class="
-                    border-t
-                    border-slate-100
-                    bg-teal-50/40
-                    px-6
-                    py-5
-                  "
-                >
-
-                  <div
-                    class="
-                      flex
-                      items-center
-                      gap-3
-                      text-sm
-                      font-medium
-                      text-teal-800
-                    "
-                  >
-
-                    <div
-                      class="
-                        flex
-                        h-9
-                        w-9
-                        items-center
-                        justify-center
-                        rounded-xl
-                        bg-white
-                        text-teal-600
-                        shadow-sm
-                      "
-                    >
-
-                      <i
-                        data-lucide="circle-check"
-                        class="h-5 w-5"
-                      ></i>
-
-                    </div>
-
-                    Semua container berhasil diproses.
-
+        <!-- REJECTED LINES / SUCCESS FOOTER -->
+        ${rejectedLines.length > 0
+          ? renderRejectedDischargingLines(rejectedLines, isPartial)
+          : isSuccess
+            ? `
+              <div class="border-t border-teal-100 bg-teal-50/40 px-6 py-5">
+                <div class="flex items-center gap-3 text-sm font-medium text-teal-800">
+                  <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-teal-600 shadow-sm">
+                    <i data-lucide="circle-check" class="h-5 w-5"></i>
                   </div>
-
+                  Semua ${totalRows} container berhasil dimasukkan ke Discharging List.
                 </div>
-
-              `
-
-              : `
-
-                <div
-                  class="
-                    border-t
-                    border-slate-100
-                    px-6
-                    py-5
-                  "
-                >
-
-                  <div
-                    class="
-                      flex
-                      items-center
-                      gap-2
-                      text-sm
-                      text-slate-500
-                    "
-                  >
-
-                    <i
-                      data-lucide="info"
-                      class="h-4 w-4"
-                    ></i>
-
-                    Tidak ada detail container untuk ditampilkan.
-
-                  </div>
-
+              </div>`
+            : `
+              <div class="border-t border-slate-100 px-6 py-5">
+                <div class="flex items-center gap-2 text-sm text-slate-400">
+                  <i data-lucide="info" class="h-4 w-4"></i>
+                  Tidak ada detail container untuk ditampilkan.
                 </div>
-
-              `
+              </div>`
         }
 
       </div>
     `;
 
-
     refreshIcons();
+    root.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
 
   // ============================================================
-  // REJECTED CONTAINERS
+  // REJECTED CONTAINERS TABLE
   // ============================================================
 
-  function renderRejectedDischargingLines(rows) {
+  function renderRejectedDischargingLines(rows, isPartial) {
+
+    // Group reasons
+    const reasonGroups = {};
+    rows.forEach(function(r) {
+      const key = r.reason || "Unknown";
+      if (!reasonGroups[key]) reasonGroups[key] = [];
+      reasonGroups[key].push(r);
+    });
+    const reasonKeys = Object.keys(reasonGroups);
+
+    const reasonSummaryHtml = reasonKeys.length > 1 ? `
+      <div class="flex flex-wrap gap-2 mt-4">
+        ${reasonKeys.map(function(rk) {
+          const cnt = reasonGroups[rk].length;
+          const isNotFound = rk.toLowerCase().includes("not found");
+          const badgeColor = isNotFound
+            ? "bg-slate-100 text-slate-600 border-slate-200"
+            : "bg-orange-50 text-orange-700 border-orange-200";
+          const dotColor = isNotFound ? "bg-slate-400" : "bg-orange-400";
+          return `<span class="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-semibold ${badgeColor}">
+            <span class="h-1.5 w-1.5 rounded-full ${dotColor}"></span>
+            ${escapeHtml(rk)} <span class="ml-0.5 font-bold">(${cnt})</span>
+          </span>`;
+        }).join("")}
+      </div>` : "";
 
     return `
+      <div class="border-t border-slate-100">
 
-      <div
-        class="
-          border-t
-          border-slate-100
-        "
-      >
-
-        <div
-          class="
-            flex
-            flex-col
-            gap-3
-            px-6
-            py-5
-            sm:flex-row
-            sm:items-center
-            sm:justify-between
-          "
-        >
-
+        <!-- Header -->
+        <div class="flex flex-col gap-4 px-6 py-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
-
-            <h3
-              class="
-                flex
-                items-center
-                gap-2
-                font-extrabold
-                text-slate-950
-              "
-            >
-
-              <i
-                data-lucide="triangle-alert"
-                class="h-4 w-4 text-red-500"
-              ></i>
-
+            <h3 class="flex items-center gap-2 font-extrabold text-slate-950">
+              <i data-lucide="triangle-alert" class="h-4 w-4 text-red-500"></i>
               Container Tidak Diproses
-
             </h3>
-
-
-            <p
-              class="
-                mt-1
-                text-sm
-                text-slate-500
-              "
-            >
-              Container berikut tidak dimasukkan ke Discharging List.
+            <p class="mt-1 text-sm text-slate-500">
+              ${isPartial
+                ? "Container berikut tidak dapat dimasukkan ke Discharging List."
+                : "Semua container ditolak. Tidak ada Discharging List yang dibuat."}
             </p>
-
+            ${reasonSummaryHtml}
           </div>
-
-
-          <span
-            class="
-              inline-flex
-              w-fit
-              items-center
-              rounded-xl
-              bg-red-50
-              px-3
-              py-1.5
-              text-xs
-              font-bold
-              text-red-700
-            "
-          >
+          <span class="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-xl border border-red-100 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700">
+            <i data-lucide="circle-x" class="h-3.5 w-3.5"></i>
             ${rows.length} Container
           </span>
-
         </div>
 
-
-        <div class="overflow-x-auto">
-
-          <table
-            class="
-              w-full
-              text-sm
-            "
-          >
-
-            <thead
-              class="
-                border-y
-                border-slate-100
-                bg-slate-50
-              "
-            >
-
-              <tr
-                class="
-                  text-xs
-                  font-bold
-                  uppercase
-                  tracking-wide
-                  text-slate-500
-                "
-              >
-
-                <th
-                  class="
-                    whitespace-nowrap
-                    px-5
-                    py-3.5
-                    text-left
-                  "
-                >
-                  No.
-                </th>
-
-                <th
-                  class="
-                    whitespace-nowrap
-                    px-5
-                    py-3.5
-                    text-left
-                  "
-                >
-                  Container
-                </th>
-
-                <th
-                  class="
-                    whitespace-nowrap
-                    px-5
-                    py-3.5
-                    text-left
-                  "
-                >
-                  Principal
-                </th>
-
-                <th
-                  class="
-                    whitespace-nowrap
-                    px-5
-                    py-3.5
-                    text-left
-                  "
-                >
-                  ISO Code
-                </th>
-
-                <th
-                  class="
-                    whitespace-nowrap
-                    px-5
-                    py-3.5
-                    text-left
-                  "
-                >
-                  Current Stage
-                </th>
-
-                <th
-                  class="
-                    min-w-[280px]
-                    px-5
-                    py-3.5
-                    text-left
-                  "
-                >
-                  Reason
-                </th>
-
+        <!-- Table -->
+        <div class="overflow-x-auto pb-1">
+          <table class="w-full text-sm">
+            <thead class="border-y border-slate-100 bg-slate-50/80">
+              <tr class="text-xs font-bold uppercase tracking-wide text-slate-500">
+                <th class="whitespace-nowrap px-5 py-3 text-left">#</th>
+                <th class="whitespace-nowrap px-5 py-3 text-left">Container No.</th>
+                <th class="whitespace-nowrap px-5 py-3 text-left">Status</th>
+                <th class="whitespace-nowrap px-5 py-3 text-left">Principal</th>
+                <th class="whitespace-nowrap px-5 py-3 text-left">ISO Code</th>
+                <th class="whitespace-nowrap px-5 py-3 text-left">Current Stage</th>
+                <th class="min-w-[260px] px-5 py-3 text-left">Alasan Penolakan</th>
               </tr>
-
             </thead>
-
-
             <tbody>
-
-              ${rows
-                .map(
-                  (row, index) =>
-                    renderRejectedDischargingRow(
-                      row,
-                      index
-                    )
-                )
-                .join("")}
-
+              ${rows.map(function(row, index) {
+                return renderRejectedDischargingRow(row, index);
+              }).join("")}
             </tbody>
-
           </table>
-
         </div>
 
       </div>
@@ -2486,187 +1996,63 @@
   // REJECTED ROW
   // ============================================================
 
-  function renderRejectedDischargingRow(
-    row,
-    index
-  ) {
+  function renderRejectedDischargingRow(row, index) {
+
+    const isFound = row.found === true;
+
+    const foundBadge = isFound
+      ? `<span class="inline-flex items-center gap-1 rounded-lg border border-teal-100 bg-teal-50 px-2 py-0.5 text-xs font-semibold text-teal-700">
+           <span class="h-1.5 w-1.5 rounded-full bg-teal-500"></span>Found
+         </span>`
+      : `<span class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
+           <span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>Not Found
+         </span>`;
+
+    const stage = row.current_stage || null;
+    const stageBadge = stage
+      ? `<span class="inline-flex items-center gap-1.5 rounded-lg border border-amber-100 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+           <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>${escapeHtml(stage)}
+         </span>`
+      : `<span class="text-xs text-slate-300">—</span>`;
+
+    const isoCode = row.iso_code
+      ? `<span class="inline-flex rounded-lg bg-slate-100 px-2.5 py-1 font-mono text-xs font-bold text-slate-700">${escapeHtml(row.iso_code)}</span>`
+      : `<span class="text-xs text-slate-300">—</span>`;
+
+    const principal = (row.principal_name || row.container_owner)
+      ? `<span class="font-semibold text-slate-800">${escapeHtml(row.principal_name || row.container_owner)}</span>`
+      : `<span class="text-xs text-slate-300">—</span>`;
+
+    const reason = row.reason || "-";
+    const isNotFound = reason.toLowerCase().includes("not found");
+    const reasonColor = isNotFound
+      ? "text-slate-600 bg-slate-50 border-slate-200"
+      : "text-red-700 bg-red-50 border-red-100";
 
     return `
-
-      <tr
-        class="
-          border-b
-          border-slate-100
-          transition
-          last:border-b-0
-          hover:bg-slate-50/70
-        "
-      >
-
-        <td
-          class="
-            px-5
-            py-4
-            text-slate-400
-          "
-        >
-          ${index + 1}
-        </td>
-
-
-        <td
-          class="
-            whitespace-nowrap
-            px-5
-            py-4
-          "
-        >
-
-          <div
-            class="
-              inline-flex
-              items-center
-              gap-2
-              font-mono
-              font-bold
-              text-slate-950
-            "
-          >
-
-            <i
-              data-lucide="container"
-              class="h-4 w-4 text-slate-400"
-            ></i>
-
-            ${escapeHtml(
-              row.container_number || "-"
-            )}
-
+      <tr class="border-b border-slate-100 transition last:border-b-0 hover:bg-slate-50/60">
+        <td class="px-5 py-3.5 text-xs text-slate-400 tabular-nums">${index + 1}</td>
+        <td class="whitespace-nowrap px-5 py-3.5">
+          <div class="inline-flex items-center gap-2 font-mono text-sm font-bold text-slate-950">
+            <i data-lucide="container" class="h-4 w-4 text-slate-400"></i>
+            ${escapeHtml(row.container_number || "-")}
           </div>
-
         </td>
-
-
-        <td
-          class="
-            whitespace-nowrap
-            px-5
-            py-4
-            font-medium
-            text-slate-700
-          "
-        >
-
-          ${escapeHtml(
-            row.principal_name ||
-            row.container_owner ||
-            "-"
-          )}
-
-        </td>
-
-
-        <td
-          class="
-            whitespace-nowrap
-            px-5
-            py-4
-          "
-        >
-
-          <span
-            class="
-              inline-flex
-              rounded-lg
-              bg-slate-100
-              px-2.5
-              py-1
-              font-mono
-              text-xs
-              font-bold
-              text-slate-700
-            "
-          >
-
-            ${escapeHtml(
-              row.iso_code ||
-              row.size ||
-              "-"
-            )}
-
+        <td class="whitespace-nowrap px-5 py-3.5">${foundBadge}</td>
+        <td class="whitespace-nowrap px-5 py-3.5">${principal}</td>
+        <td class="whitespace-nowrap px-5 py-3.5">${isoCode}</td>
+        <td class="whitespace-nowrap px-5 py-3.5">${stageBadge}</td>
+        <td class="px-5 py-3.5">
+          <span class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${reasonColor}">
+            ${escapeHtml(reason)}
           </span>
-
         </td>
-
-
-        <td
-          class="
-            whitespace-nowrap
-            px-5
-            py-4
-          "
-        >
-
-          <span
-            class="
-              inline-flex
-              items-center
-              gap-1.5
-              rounded-full
-              border
-              border-amber-100
-              bg-amber-50
-              px-2.5
-              py-1
-              text-xs
-              font-bold
-              text-amber-700
-            "
-          >
-
-            <span
-              class="
-                h-1.5
-                w-1.5
-                rounded-full
-                bg-amber-500
-              "
-            ></span>
-
-            ${escapeHtml(
-              row.current_stage || "-"
-            )}
-
-          </span>
-
-        </td>
-
-
-        <td
-          class="
-            px-5
-            py-4
-            leading-6
-            text-red-600
-          "
-        >
-
-          ${escapeHtml(
-            row.reason || "-"
-          )}
-
-        </td>
-
       </tr>
     `;
   }
 
 
-  // ============================================================
-  // FILE → BASE64
-  // ============================================================
-
-  function fileToBase64(file) {
+function fileToBase64(file) {
 
     return new Promise(
       function(resolve, reject) {
