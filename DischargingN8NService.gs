@@ -21,8 +21,12 @@ function sendDischargingToN8N_(payload) {
       .toLowerCase()
       .endsWith(".pdf");
 
+  // Jika payload PDF sudah diparsing di Apps Script (base64 sudah dihapus),
+  // kita gunakan webhook utama, bukan webhook extraction n8n.
+  const useExtractionWebhook = isPdfFile && payload && payload.base64;
+
   const targetUrl =
-    isPdfFile
+    useExtractionWebhook
       ? N8N_PDF_CONTAINER_EXTRACTION_URL
       : N8N_DISCHARGING_UPLOAD_URL;
 

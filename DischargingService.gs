@@ -47,7 +47,7 @@ function uploadDischargingList(payload) {
     }
 
 
-    if (!payload.base64) {
+    if (!payload.base64 && !payload.isParsed) {
 
       return {
         success: false,
@@ -64,29 +64,32 @@ function uploadDischargingList(payload) {
     // BUILD N8N PAYLOAD
     // ==========================================================
 
+    const isPdfFile =
+      String(payload.mimeType || "").toLowerCase().includes("pdf") ||
+      String(payload.fileName || "").toLowerCase().endsWith(".pdf");
+
     const n8nPayload = {
-
-      fileName:
-        String(payload.fileName || ""),
-
-      mimeType:
-        String(
-          payload.mimeType ||
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        ),
-
-      base64:
-        String(payload.base64 || ""),
-
-      user:
-        payload.user || {},
-
-      userAgent:
-        String(
-          payload.userAgent || ""
-        )
-
+      fileName: String(payload.fileName || ""),
+      mimeType: String(payload.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+      user: payload.user || {},
+      userAgent: String(payload.userAgent || "")
     };
+
+    if (payload.isParsed) {
+      console.log("PDF SUDAH DIPARSING DI FRONTEND.");
+      n8nPayload.isParsed = true;
+      n8nPayload.parsedHeader = payload.parsedHeader || {};
+      n8nPayload.parsedContainers = payload.parsedContainers || [];
+    } else if (isPdfFile) {
+      console.log("PARSING PDF IN APPS SCRIPT...");
+      const parsedData = parseDischargingPDF(payload.base64, payload.fileName);
+      
+      n8nPayload.isParsed = true;
+      n8nPayload.parsedHeader = parsedData.header;
+      n8nPayload.parsedContainers = parsedData.containers;
+    } else {
+      n8nPayload.base64 = String(payload.base64 || "");
+    }
 
 
     console.log(

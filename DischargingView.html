@@ -555,55 +555,100 @@
                 </p>
 
 
-                <button
-                  id="uploadDischargingButton"
-                  type="button"
-                  onclick="uploadDischargingFile()"
-                  disabled
-                  class="
-                    group
-                    mt-5
-                    flex
-                    w-full
-                    items-center
-                    justify-center
-                    gap-3
-                    rounded-2xl
-                    bg-teal-600
-                    px-5
-                    py-4
-                    text-sm
-                    font-bold
-                    text-white
-                    shadow-lg
-                    shadow-teal-600/25
-                    transition
-                    hover:bg-teal-700
-                    focus:outline-none
-                    focus:ring-4
-                    focus:ring-teal-500/20
-                    disabled:cursor-not-allowed
-                    disabled:opacity-40
-                    disabled:shadow-none
-                  "
-                >
-
-                  <span id="uploadDischargingButtonText">
-                    Upload & Validate
-                  </span>
-
-                  <i
-                    id="uploadDischargingButtonIcon"
-                    data-lucide="send"
+                <div class="mt-5 flex gap-3">
+                  <button
+                    id="uploadDischargingButton"
+                    type="button"
+                    onclick="uploadDischargingFile()"
+                    disabled
                     class="
-                      h-5
-                      w-5
+                      group
+                      flex
+                      flex-1
+                      items-center
+                      justify-center
+                      gap-3
+                      rounded-2xl
+                      bg-teal-600
+                      px-5
+                      py-4
+                      text-sm
+                      font-bold
+                      text-white
+                      shadow-lg
+                      shadow-teal-600/25
                       transition
-                      group-hover:translate-x-0.5
+                      hover:bg-teal-700
+                      focus:outline-none
+                      focus:ring-4
+                      focus:ring-teal-500/20
+                      disabled:cursor-not-allowed
+                      disabled:opacity-40
+                      disabled:shadow-none
                     "
-                  ></i>
+                  >
+                    <span id="uploadDischargingButtonText">
+                      Upload & Validate
+                    </span>
+                    <i
+                      id="uploadDischargingButtonIcon"
+                      data-lucide="send"
+                      class="
+                        h-5
+                        w-5
+                        transition
+                        group-hover:translate-x-0.5
+                      "
+                    ></i>
+                  </button>
 
-                </button>
+                  <button
+                    id="parsePdfButton"
+                    type="button"
+                    onclick="parsePdfAndPreview()"
+                    disabled
+                    class="
+                      hidden
+                      group
+                      flex
+                      flex-1
+                      items-center
+                      justify-center
+                      gap-3
+                      rounded-2xl
+                      bg-indigo-600
+                      px-5
+                      py-4
+                      text-sm
+                      font-bold
+                      text-white
+                      shadow-lg
+                      shadow-indigo-600/25
+                      transition
+                      hover:bg-indigo-700
+                      focus:outline-none
+                      focus:ring-4
+                      focus:ring-indigo-500/20
+                      disabled:cursor-not-allowed
+                      disabled:opacity-40
+                      disabled:shadow-none
+                    "
+                  >
+                    <span id="parsePdfButtonText">
+                      Parse PDF & Validate
+                    </span>
+                    <i
+                      id="parsePdfButtonIcon"
+                      data-lucide="file-search"
+                      class="
+                        h-5
+                        w-5
+                        transition
+                        group-hover:translate-x-0.5
+                      "
+                    ></i>
+                  </button>
+                </div>
 
               </div>
 
@@ -611,6 +656,20 @@
 
           </div>
 
+        </section>
+        
+        <!-- PARSED FORM SECTION -->
+        <section
+          id="dischargingParsedForm"
+          class="mx-auto w-full max-w-5xl px-4 py-8 hidden"
+        >
+        </section>
+
+        <!-- RESULT SECTION -->
+        <section
+          id="dischargingResult"
+          class="mx-auto w-full max-w-3xl px-4 py-8"
+        >
         </section>
 
       </main>
@@ -824,14 +883,27 @@
     }
 
 
-    const button =
-      document.getElementById(
-        "uploadDischargingButton"
-      );
+    const button = document.getElementById("uploadDischargingButton");
+    const parsePdfButton = document.getElementById("parsePdfButton");
 
-
-    if (button) {
-      button.disabled = false;
+    if (extension === "pdf") {
+      if (button) {
+        button.disabled = true;
+        button.classList.add("hidden");
+      }
+      if (parsePdfButton) {
+        parsePdfButton.disabled = false;
+        parsePdfButton.classList.remove("hidden");
+      }
+    } else {
+      if (button) {
+        button.disabled = false;
+        button.classList.remove("hidden");
+      }
+      if (parsePdfButton) {
+        parsePdfButton.disabled = true;
+        parsePdfButton.classList.add("hidden");
+      }
     }
 
 
@@ -860,99 +932,47 @@
     }
 
 
-    const button =
-      document.getElementById(
-        "uploadDischargingButton"
-      );
+    const button = document.getElementById("uploadDischargingButton");
+    const parsePdfButton = document.getElementById("parsePdfButton");
+    const buttonText = document.getElementById("uploadDischargingButtonText");
+    const parsePdfButtonText = document.getElementById("parsePdfButtonText");
+    const buttonIcon = document.getElementById("uploadDischargingButtonIcon");
+    const parsePdfButtonIcon = document.getElementById("parsePdfButtonIcon");
 
+    const isPdf = file.name.toLowerCase().endsWith(".pdf");
 
-    const buttonText =
-      document.getElementById(
-        "uploadDischargingButtonText"
-      );
-
-
-    const buttonIcon =
-      document.getElementById(
-        "uploadDischargingButtonIcon"
-      );
-
-
-    if (button) {
-      button.disabled = true;
-    }
-
-
-    if (buttonText) {
-      buttonText.textContent =
-        "Processing...";
-    }
-
-
-    if (buttonIcon) {
-
-      buttonIcon.outerHTML = `
-        <span
-          id="uploadDischargingButtonIcon"
-          class="loader"
-        ></span>
-      `;
+    if (isPdf) {
+      if (parsePdfButton) parsePdfButton.disabled = true;
+      if (parsePdfButtonText) parsePdfButtonText.textContent = "Parsing...";
+      if (parsePdfButtonIcon) {
+        parsePdfButtonIcon.outerHTML = `<span id="parsePdfButtonIcon" class="loader"></span>`;
+      }
+    } else {
+      if (button) button.disabled = true;
+      if (buttonText) buttonText.textContent = "Processing...";
+      if (buttonIcon) {
+        buttonIcon.outerHTML = `<span id="uploadDischargingButtonIcon" class="loader"></span>`;
+      }
     }
 
 
     try {
 
       // ========================================================
-      // FILE → BASE64
+      // BUILD PAYLOAD
       // ========================================================
-
-      const base64 =
-        await fileToBase64(file);
-
-
-      // ========================================================
-      // PAYLOAD
-      // ========================================================
-
-      const extension =
-        String(file.name || "")
-          .split(".")
-          .pop()
-          .toLowerCase();
 
       const payload = {
-
-        fileName:
-          file.name,
-
-        mimeType:
-          file.type ||
-          (
-            extension === "pdf"
-              ? "application/pdf"
-              : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          ),
-
-        base64:
-          base64,
-
+        fileName: file.name,
+        mimeType: file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        base64: await fileToBase64(file),
         user: {
-
-          email:
-            state.session?.email || "",
-
-          uid:
-            state.session?.uid || "",
-
-          partnerId:
-            state.session?.partnerId || "",
-
-          partnerName:
-            state.session?.partnerName || ""
+          email: state.session?.email || "",
+          uid: state.session?.uid || "",
+          partnerId: state.session?.partnerId || "",
+          partnerName: state.session?.partnerName || ""
         },
-
-        userAgent:
-          navigator.userAgent || ""
+        userAgent: navigator.userAgent || ""
       };
 
 
@@ -1170,39 +1190,26 @@
 
     } finally {
 
-      if (button) {
-        button.disabled = false;
-      }
-
-
-      if (buttonText) {
-
-        buttonText.textContent =
-          "Upload & Validate";
-      }
-
-
-      const currentIcon =
-        document.getElementById(
-          "uploadDischargingButtonIcon"
-        );
-
-
-      if (currentIcon) {
-
-        currentIcon.outerHTML = `
-
-          <i
-            id="uploadDischargingButtonIcon"
-            data-lucide="send"
-            class="
-              h-5
-              w-5
-              transition
-              group-hover:translate-x-0.5
-            "
-          ></i>
-        `;
+      if (isPdf) {
+        if (parsePdfButton) parsePdfButton.disabled = false;
+        if (parsePdfButtonText) parsePdfButtonText.textContent = "Parse PDF & Validate";
+        
+        const currentParseIcon = document.getElementById("parsePdfButtonIcon");
+        if (currentParseIcon) {
+          currentParseIcon.outerHTML = `
+            <i id="parsePdfButtonIcon" data-lucide="file-search" class="h-5 w-5 transition group-hover:translate-x-0.5"></i>
+          `;
+        }
+      } else {
+        if (button) button.disabled = false;
+        if (buttonText) buttonText.textContent = "Upload & Validate";
+        
+        const currentIcon = document.getElementById("uploadDischargingButtonIcon");
+        if (currentIcon) {
+          currentIcon.outerHTML = `
+            <i id="uploadDischargingButtonIcon" data-lucide="send" class="h-5 w-5 transition group-hover:translate-x-0.5"></i>
+          `;
+        }
       }
 
 
@@ -1250,6 +1257,347 @@
     );
   }
 
+
+  // ============================================================
+  // CLIENT SIDE PDF PARSER (PDF.JS)
+  // ============================================================
+  
+  function parseDischargingAdviceTextClient(text) {
+    var result = {
+      header: {},
+      containers: []
+    };
+    
+    var vesselMatch = text.match(/Vessel\/Voyage\s*([A-Za-z0-9\s/.-]+)/i);
+    if (vesselMatch) result.header.vesselVoyage = vesselMatch[1].trim();
+    
+    var polPodMatch = text.match(/POL\s*-\s*POD\s*:\s*([A-Za-z0-9\s,.-]+)/i);
+    if (polPodMatch) result.header.polPod = polPodMatch[1].trim();
+    
+    var tdVesselMatch = text.match(/TD Vessel\s*:\s*([A-Za-z0-9\s,]+)/i);
+    if (tdVesselMatch) result.header.tdVessel = tdVesselMatch[1].trim();
+    
+    var etaVesselMatch = text.match(/ETA Vessel\s*:\s*([A-Za-z0-9\s,]+)/i);
+    if (etaVesselMatch) result.header.etaVessel = etaVesselMatch[1].trim();
+    
+    // PDF.js join (" ") often creates spaces between letters if not careful,
+    // but typically container number is matched by stripping spaces or using regex.
+    // The exact regex depends on how pdf.js parsed the string. 
+    // Container usually: 4 letters + 7 digits (e.g. K K T U 8 2 5 8 2 7 3 or KKTU8258273)
+    // We remove all spaces from the line to be safe for container number matching
+    var lines = text.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var cleanLine = line.replace(/\s+/g, ''); // KKTU8258273
+      
+      var containerMatch = cleanLine.match(/([A-Z]{4}\d{7})/i);
+      
+      if (containerMatch) {
+        var containerNo = containerMatch[1].toUpperCase();
+        var sizeMatch = cleanLine.match(/(20|40|45)/);
+        var typeMatch = cleanLine.match(/(GP|HC|RF|OT|FR|TK|HQ)/i);
+        
+        var exists = result.containers.find(function(c) {
+          return c.containerNo === containerNo;
+        });
+        
+        if (!exists) {
+          result.containers.push({
+            containerNo: containerNo,
+            size: sizeMatch ? sizeMatch[1] : "",
+            type: typeMatch ? typeMatch[1].toUpperCase() : "",
+            rawLine: line.trim()
+          });
+        }
+      }
+    }
+    
+    return result;
+  }
+
+  // ============================================================
+  // PARSE PDF & PREVIEW (NEW ALUR)
+  // ============================================================
+  
+  async function parsePdfAndPreview() {
+    const file = dischargingState.file;
+    if (!file) return;
+
+    const parsePdfButton = document.getElementById("parsePdfButton");
+    const parsePdfButtonText = document.getElementById("parsePdfButtonText");
+    const parsePdfButtonIcon = document.getElementById("parsePdfButtonIcon");
+    
+    if (parsePdfButton) parsePdfButton.disabled = true;
+    if (parsePdfButtonText) parsePdfButtonText.textContent = "Parsing...";
+    if (parsePdfButtonIcon) {
+      parsePdfButtonIcon.outerHTML = `<span id="parsePdfButtonIcon" class="loader"></span>`;
+    }
+
+    try {
+      console.log("Mengekstrak teks dari PDF menggunakan PDF.js...");
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = "";
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(" ");
+        fullText += pageText + "\n";
+      }
+
+      const parsedData = parseDischargingAdviceTextClient(fullText);
+      console.log("Parsed PDF Data:", parsedData);
+      
+      // Render to UI
+      renderParsedDischargingForm(parsedData, file.name);
+
+    } catch (error) {
+      console.error(error);
+      showToast("Gagal memproses PDF: " + (error.message || String(error)), "error");
+    } finally {
+      if (parsePdfButton) parsePdfButton.disabled = false;
+      if (parsePdfButtonText) parsePdfButtonText.textContent = "Parse PDF & Validate";
+      const currentIcon = document.getElementById("parsePdfButtonIcon");
+      if (currentIcon) {
+        currentIcon.outerHTML = `<i id="parsePdfButtonIcon" data-lucide="file-search" class="h-5 w-5 transition group-hover:translate-x-0.5"></i>`;
+      }
+      refreshIcons();
+    }
+  }
+
+  // ============================================================
+  // RENDER PARSED FORM
+  // ============================================================
+
+  function renderParsedDischargingForm(parsedData, fileName) {
+    const formSection = document.getElementById("dischargingParsedForm");
+    if (!formSection) return;
+
+    // Clear and Show
+    formSection.innerHTML = "";
+    formSection.classList.remove("hidden");
+    
+    // Hide original upload box slightly or keep it.
+    // Let's scroll to the form
+    formSection.scrollIntoView({ behavior: 'smooth' });
+
+    let containersHtml = "";
+    if (parsedData.containers && parsedData.containers.length > 0) {
+      parsedData.containers.forEach((c, index) => {
+        containersHtml += `
+          <tr id="containerRow-${index}" class="border-b border-slate-100 last:border-0 hover:bg-slate-50/50">
+            <td class="p-3">
+              <input type="text" class="w-full rounded border border-slate-200 px-2 py-1 text-sm outline-none focus:border-teal-500" name="containerNo[]" value="${c.containerNo || ''}">
+            </td>
+            <td class="p-3">
+              <input type="text" class="w-full rounded border border-slate-200 px-2 py-1 text-sm outline-none focus:border-teal-500" name="size[]" value="${c.size || ''}">
+            </td>
+            <td class="p-3">
+              <input type="text" class="w-full rounded border border-slate-200 px-2 py-1 text-sm outline-none focus:border-teal-500" name="type[]" value="${c.type || ''}">
+            </td>
+            <td class="p-3 text-right">
+              <button type="button" onclick="document.getElementById('containerRow-${index}').remove()" class="text-red-500 hover:text-red-700 p-1">
+                <i data-lucide="trash-2" class="h-4 w-4"></i>
+              </button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    const html = `
+      <div class="glass-panel rounded-3xl p-6 sm:p-8 shadow-soft">
+        <h3 class="text-xl font-extrabold text-slate-900 mb-6">Review Data PDF: ${fileName}</h3>
+        
+        <form id="parsedDischargingForm" class="space-y-6">
+          <input type="hidden" id="parsedFileName" value="${fileName}">
+          <!-- Header Data -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-1">Vessel / Voyage</label>
+              <input type="text" id="headerVesselVoyage" class="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm outline-none focus:border-teal-500" value="${parsedData.header?.vesselVoyage || ''}">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-1">POL - POD</label>
+              <input type="text" id="headerPolPod" class="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm outline-none focus:border-teal-500" value="${parsedData.header?.polPod || ''}">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-1">TD Vessel</label>
+              <input type="text" id="headerTdVessel" class="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm outline-none focus:border-teal-500" value="${parsedData.header?.tdVessel || ''}">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-1">ETA Vessel</label>
+              <input type="text" id="headerEtaVessel" class="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm outline-none focus:border-teal-500" value="${parsedData.header?.etaVessel || ''}">
+            </div>
+          </div>
+
+          <!-- Table Container -->
+          <div>
+            <div class="flex justify-between items-end mb-2">
+              <h4 class="font-bold text-slate-800">Daftar Kontainer</h4>
+              <button type="button" onclick="addParsedContainerRow()" class="text-sm font-semibold text-teal-600 hover:text-teal-800 bg-teal-50 px-3 py-1 rounded-lg">
+                + Tambah Baris
+              </button>
+            </div>
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+              <table class="w-full text-left text-sm text-slate-700">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th class="p-3 font-semibold w-1/3">No. Kontainer</th>
+                    <th class="p-3 font-semibold w-1/4">Size</th>
+                    <th class="p-3 font-semibold w-1/4">Type</th>
+                    <th class="p-3 font-semibold text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="parsedContainerListBody">
+                  ${containersHtml}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Submit Button -->
+          <div class="pt-4 flex justify-end gap-3">
+             <button
+                type="button"
+                onclick="document.getElementById('dischargingParsedForm').classList.add('hidden')"
+                class="rounded-xl bg-slate-100 px-6 py-3 text-sm font-bold text-slate-700 hover:bg-slate-200"
+              >
+                Batal
+              </button>
+              <button
+                id="submitParsedButton"
+                type="button"
+                onclick="submitParsedDischarging()"
+                class="rounded-xl bg-teal-600 px-8 py-3 text-sm font-bold text-white hover:bg-teal-700 flex items-center gap-2 shadow-lg shadow-teal-600/20"
+              >
+                <span id="submitParsedText">Submit ke n8n</span>
+                <i id="submitParsedIcon" data-lucide="send" class="h-4 w-4"></i>
+              </button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    formSection.innerHTML = html;
+    refreshIcons();
+  }
+
+  function addParsedContainerRow() {
+    const tbody = document.getElementById("parsedContainerListBody");
+    if (!tbody) return;
+    const index = Date.now(); // unique ID
+    const tr = document.createElement("tr");
+    tr.id = "containerRow-" + index;
+    tr.className = "border-b border-slate-100 last:border-0 hover:bg-slate-50/50";
+    tr.innerHTML = `
+      <td class="p-3">
+        <input type="text" class="w-full rounded border border-slate-200 px-2 py-1 text-sm outline-none focus:border-teal-500" name="containerNo[]" value="">
+      </td>
+      <td class="p-3">
+        <input type="text" class="w-full rounded border border-slate-200 px-2 py-1 text-sm outline-none focus:border-teal-500" name="size[]" value="">
+      </td>
+      <td class="p-3">
+        <input type="text" class="w-full rounded border border-slate-200 px-2 py-1 text-sm outline-none focus:border-teal-500" name="type[]" value="">
+      </td>
+      <td class="p-3 text-right">
+        <button type="button" onclick="document.getElementById('containerRow-${index}').remove()" class="text-red-500 hover:text-red-700 p-1">
+          <i data-lucide="trash-2" class="h-4 w-4"></i>
+        </button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+    refreshIcons();
+  }
+
+  // ============================================================
+  // SUBMIT PARSED FORM TO BACKEND
+  // ============================================================
+  
+  async function submitParsedDischarging() {
+    const btn = document.getElementById("submitParsedButton");
+    const btnText = document.getElementById("submitParsedText");
+    const btnIcon = document.getElementById("submitParsedIcon");
+
+    if (btn) btn.disabled = true;
+    if (btnText) btnText.textContent = "Mengirim...";
+    if (btnIcon) btnIcon.outerHTML = `<span id="submitParsedIcon" class="loader"></span>`;
+
+    try {
+      // Build Header
+      const parsedHeader = {
+        vesselVoyage: document.getElementById("headerVesselVoyage")?.value || "",
+        polPod: document.getElementById("headerPolPod")?.value || "",
+        tdVessel: document.getElementById("headerTdVessel")?.value || "",
+        etaVessel: document.getElementById("headerEtaVessel")?.value || ""
+      };
+
+      // Build Containers
+      const parsedContainers = [];
+      const containerNos = document.getElementsByName("containerNo[]");
+      const sizes = document.getElementsByName("size[]");
+      const types = document.getElementsByName("type[]");
+
+      for (let i = 0; i < containerNos.length; i++) {
+        const cNo = containerNos[i].value.trim();
+        if (cNo) {
+          parsedContainers.push({
+            containerNo: cNo,
+            size: sizes[i].value.trim(),
+            type: types[i].value.trim()
+          });
+        }
+      }
+
+      const fileName = document.getElementById("parsedFileName")?.value || "ParsedDischarging.pdf";
+
+      const payload = {
+        fileName: fileName,
+        mimeType: "application/pdf",
+        base64: "", // No base64
+        isParsed: true,
+        parsedHeader: parsedHeader,
+        parsedContainers: parsedContainers,
+        user: {
+          email: state.session?.email || "",
+          uid: state.session?.uid || "",
+          partnerId: state.session?.partnerId || "",
+          partnerName: state.session?.partnerName || ""
+        },
+        userAgent: navigator.userAgent || ""
+      };
+
+      console.log("SUBMIT PARSED REQUEST:", payload);
+
+      const response = await runDischargingServer(payload);
+      console.log("SUBMIT PARSED RESPONSE:", response);
+
+      if (!isSuccessResponse(response)) {
+        throw new Error(
+          response && response.message
+            ? response.message
+            : "Upload (Parsed) gagal."
+        );
+      }
+
+      showToast("Data berhasil dikirim!", "success");
+      document.getElementById("dischargingParsedForm").classList.add("hidden");
+      renderDischargingResult(response.data || {});
+
+    } catch (error) {
+      console.error(error);
+      showToast(error.message || String(error), "error");
+    } finally {
+      if (btn) btn.disabled = false;
+      if (btnText) btnText.textContent = "Submit ke n8n";
+      const icon = document.getElementById("submitParsedIcon");
+      if (icon) {
+         icon.outerHTML = `<i id="submitParsedIcon" data-lucide="send" class="h-4 w-4"></i>`;
+      }
+      refreshIcons();
+    }
+  }
 
   // ============================================================
   // RENDER RESULT
